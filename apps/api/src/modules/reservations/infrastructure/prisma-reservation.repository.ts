@@ -11,7 +11,6 @@ import type {
   ConfirmedReservation,
   ReservationRepository,
   ResourceSnapshot,
-  SlotSnapshot,
 } from '../application/ports';
 
 /**
@@ -53,7 +52,7 @@ export class PrismaReservationRepository implements ReservationRepository {
     };
   }
 
-  async findSlots(slotIds: readonly string[]): Promise<SlotSnapshot[]> {
+  async findSlots(slotIds: readonly string[]) {
     const slots = await this.prisma.slot.findMany({
       where: { id: { in: [...slotIds] } },
     });
@@ -144,7 +143,30 @@ export class PrismaReservationRepository implements ReservationRepository {
           // rowsAffected = 0 significa que a condição falhou: não há unidades
           // suficientes. É resultado de negócio, não erro técnico.
           if (affected === 0) {
-            throw new SlotUnavailableError(slot.id);
+            // Antes de culpar a disputa, distinguir o caso em que o próprio
+            // usuário já ocupa este slot.
+            //
+            // Num recurso EXCLUSIVE o contador chega ao teto com UMA reserva,
+            // então o UPDATE falha antes de a constraint de unicidade ser
+            // avaliada — e o usuário receberia "alguém foi mais rápido"
+            // quando na verdade quem reservou foi ele mesmo. A distinção
+            // importa: em ALREADY_RESERVED a contagem está correta e a tela
+            // não deve reconciliar nada (ADR 0006).
+            //
+            // Esta leitura só acontece no caminho de FALHA, e não é a
+            // garantia de nada: a constraint única continua sendo a verdade.
+            const meu = await tx.reservationSlot.findFirst({
+              where: {
+                slotId: slot.id,
+                userId: command.userId,
+                status: 'CONFIRMED',
+              },
+              select: { reservationId: true },
+            });
+
+            throw meu
+              ? new AlreadyReservedError(slot.id)
+              : new SlotUnavailableError(slot.id);
           }
 
           const current = await tx.slot.findUniqueOrThrow({
@@ -206,7 +228,12 @@ export class PrismaReservationRepository implements ReservationRepository {
     error: unknown,
     command: ConfirmReservationCommand,
   ): unknown {
-    if (error instanceof SlotUnavailableError) return error;
+    if (
+      error instanceof SlotUnavailableError ||
+      error instanceof AlreadyReservedError
+    ) {
+      return error;
+    }
 
     const code = this.pgErrorCode(error);
     const message = this.pgErrorText(error);

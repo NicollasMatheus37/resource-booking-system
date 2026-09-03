@@ -31,9 +31,10 @@ do banco rodam contra Postgres real.
 | 1 | `EXCLUSIVE` sob disputa | 200 usuários distintos, 1 slot de sala | exatamente **1** `201`, **199** `409 SLOT_UNAVAILABLE`, `reserved_units = 1`, zero `5xx` |
 | 2 | `SHARED` com quantidade variada | 200 usuários pedindo 1–4 unidades, slot de 30 | soma das quantidades confirmadas ≤ 30 **e igual** a `reserved_units`, zero overbooking |
 | 3 | Multi-slot e deadlock | 60 usuários, janelas de 3 slots deslizantes e sobrepostas, metade enviando em ordem invertida | zero sucesso parcial, zero erro de deadlock, nenhum slot exclusivo com mais de 1 reserva |
-| 4 | Idempotência por usuário | mesmo usuário, mesmo slot, duas vezes | `201` e depois `409 ALREADY_RESERVED`, com `reserved_units` **inalterado** |
+| 4 | Idempotência em `SHARED` | mesmo usuário, mesmo slot, duas vezes | `201` e depois `409 ALREADY_RESERVED`, com `reserved_units` **inalterado** |
+| 5 | Idempotência em `EXCLUSIVE` | dono repete; depois outro usuário tenta | dono recebe `ALREADY_RESERVED`, o outro recebe `SLOT_UNAVAILABLE` |
 
-Resultado: **4/4 passando**, ~9s de execução.
+Resultado: **5/5 passando**, ~9s de execução.
 
 ### O que cada cenário prova
 
@@ -53,11 +54,18 @@ entre si e metade dos clientes envia os slots em ordem invertida. Sem o
 slots em sentidos opostos e o Postgres abortaria uma delas com `40P01`, que
 viraria `500`. A asserção `erros5xx === []` falha se aquele `sort` for removido.
 
-**Cenário 4 — os dois `409` são distinguíveis.** É a diferença que o frontend
-precisa (ADR 0006): em `SLOT_UNAVAILABLE` a contagem mudou e a tela precisa
-reconciliar; em `ALREADY_RESERVED` a contagem está correta e mexer nela
-introduziria o erro que se queria evitar. A asserção sobre `reserved_units`
-inalterado é o que prova a diferença.
+**Cenários 4 e 5 — os dois `409` são distinguíveis.** É a diferença que o
+frontend precisa (ADR 0006): em `SLOT_UNAVAILABLE` a contagem mudou e a tela
+precisa reconciliar; em `ALREADY_RESERVED` a contagem está correta e mexer
+nela introduziria o erro que se queria evitar.
+
+O cenário 5 cobre um caso sutil que a implementação errou de primeira. Num
+recurso `EXCLUSIVE` o contador atinge o teto com **uma** reserva, então o
+`UPDATE` atômico falha antes de a constraint de unicidade ser avaliada — e o
+próprio dono da reserva recebia "alguém foi mais rápido". A correção consulta
+a titularidade **apenas no caminho de falha**, sem custo no caminho feliz e
+sem transferir garantia nenhuma para a aplicação: a constraint única continua
+sendo a verdade.
 
 ## Verificação direta das constraints
 

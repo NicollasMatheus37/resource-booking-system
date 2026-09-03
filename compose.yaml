@@ -22,13 +22,47 @@ services:
       timeout: 3s
       retries: 20
 
+  # Passo de release: aplica as migrations e sai. A API só sobe depois que
+  # este serviço termina com sucesso (12-Factor V, ADR 0010).
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-booking}:${POSTGRES_PASSWORD:-booking}@postgres:5432/${POSTGRES_DB:-booking}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  # Processo administrativo one-off: popula recursos, slots e usuários.
+  # Rodar com: docker compose run --rm seed
+  seed:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: seed
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-booking}:${POSTGRES_PASSWORD:-booking}@postgres:5432/${POSTGRES_DB:-booking}
+      SLOT_DURATION_MINUTES: ${SLOT_DURATION_MINUTES:-30}
+      SCHEDULE_HORIZON_DAYS: ${SCHEDULE_HORIZON_DAYS:-7}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    profiles: ['tools']
+    restart: 'no'
+
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      # Explícito de propósito: sem isto, o Docker constrói o ÚLTIMO estágio
+      # do arquivo, que é o processo administrativo de seed.
+      target: runner
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://booking:booking@postgres:5432/booking}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-booking}:${POSTGRES_PASSWORD:-booking}@postgres:5432/${POSTGRES_DB:-booking}
       PORT: '3000'
       NODE_ENV: production
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
@@ -39,6 +73,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ['CMD-SHELL', 'node -e "fetch(\"http://localhost:3000/api/health\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"']
       interval: 10s
@@ -50,6 +86,7 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      target: runner
     restart: unless-stopped
     environment:
       # Lido pelo browser do usuário, por isso localhost e não o nome do serviço.

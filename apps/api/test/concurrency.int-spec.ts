@@ -219,5 +219,32 @@ describe('Condição de corrida na reserva', () => {
       });
       expect(depois.reservedUnits).toBe(antes.reservedUnits);
     });
+
+    it('distingue os dois 409 também em recurso EXCLUSIVE', async () => {
+      // Caso sutil: num recurso exclusivo o contador atinge o teto com UMA
+      // reserva, então o UPDATE atômico falha ANTES de a constraint de
+      // unicidade ser avaliada. Sem tratamento específico, o próprio dono da
+      // reserva receberia "alguém foi mais rápido".
+      const slots = await slotsOf(prisma, fx.exclusiveResourceId);
+      const alvo = slots[1];
+      const [dono, outro] = fx.users;
+
+      const primeira = await reserve(dono.id, fx.exclusiveResourceId, [
+        alvo.id,
+      ]);
+      expect(primeira.status).toBe(201);
+
+      const repetida = await reserve(dono.id, fx.exclusiveResourceId, [
+        alvo.id,
+      ]);
+      expect(repetida.status).toBe(409);
+      expect(repetida.body.code).toBe('ALREADY_RESERVED');
+
+      const terceiro = await reserve(outro.id, fx.exclusiveResourceId, [
+        alvo.id,
+      ]);
+      expect(terceiro.status).toBe(409);
+      expect(terceiro.body.code).toBe('SLOT_UNAVAILABLE');
+    });
   });
 });

@@ -20,21 +20,21 @@ export default [
           enforceBuildableLibDependency: true,
           allow: ['^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$'],
           depConstraints: [
+            // O que é compartilhado não pode depender de aplicação: é o que
+            // impede `libs/contracts` de arrastar NestJS ou Angular junto.
             {
               sourceTag: 'scope:shared',
               onlyDependOnLibsWithTags: ['scope:shared'],
             },
-            {
-              sourceTag: 'scope:shop',
-              onlyDependOnLibsWithTags: ['scope:shop', 'scope:shared'],
-            },
+            // API e frontend só enxergam o que é compartilhado — nunca um ao
+            // outro.
             {
               sourceTag: 'scope:api',
-              onlyDependOnLibsWithTags: ['scope:api', 'scope:shared'],
+              onlyDependOnLibsWithTags: ['scope:shared'],
             },
             {
-              sourceTag: 'type:data',
-              onlyDependOnLibsWithTags: ['type:data'],
+              sourceTag: 'scope:web',
+              onlyDependOnLibsWithTags: ['scope:shared'],
             },
           ],
         },

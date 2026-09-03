@@ -28,7 +28,6 @@ async function bootstrap() {
 
 bootstrap().catch((error: unknown) => {
   // Falhar no boot é melhor que falhar na primeira requisição (ADR 0010).
-  // eslint-disable-next-line no-console
   console.error(
     `\n[boot] ${error instanceof Error ? error.message : String(error)}\n`,
   );
