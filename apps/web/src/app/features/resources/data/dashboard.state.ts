@@ -1,5 +1,6 @@
 import type {
   ApiErrorCode,
+  ReservationSummaryDto,
   ResourceDto,
   SlotDto,
 } from '@resource-booking/contracts';
@@ -26,6 +27,9 @@ export interface DashboardState {
   readonly submitting: boolean;
   readonly connection: ConnectionState;
   readonly notice: Notice | null;
+  readonly myReservations: readonly ReservationSummaryDto[];
+  /** Reserva com cancelamento em voo — desabilita só o botão dela. */
+  readonly cancellingId: string | null;
 }
 
 export const initialState: DashboardState = {
@@ -39,6 +43,8 @@ export const initialState: DashboardState = {
   submitting: false,
   connection: 'connecting',
   notice: null,
+  myReservations: [],
+  cancellingId: null,
 };
 
 export type DashboardAction =
@@ -65,4 +71,8 @@ export type DashboardAction =
       unitsPerSlot: number;
     }
   | { type: 'connection-changed'; connection: ConnectionState }
-  | { type: 'notice-dismissed' };
+  | { type: 'notice-dismissed' }
+  | { type: 'reservations-loaded'; reservations: readonly ReservationSummaryDto[] }
+  | { type: 'cancel-started'; reservationId: string }
+  | { type: 'cancel-succeeded'; changed: boolean }
+  | { type: 'cancel-failed'; message: string };

@@ -42,6 +42,8 @@ export class DashboardStore {
 
   private readonly submit$ = new Subject<void>();
   private readonly reloadSlots$ = new Subject<void>();
+  private readonly cancel$ = new Subject<string>();
+  private readonly reloadReservations$ = new Subject<void>();
 
   readonly state = this._state.asReadonly();
   readonly resources = computed(() => this._state().resources);
@@ -55,6 +57,10 @@ export class DashboardStore {
   readonly maxSlots = computed(() => maxSlots(this._state()));
   readonly invalidSelection = computed(() => invalidSelection(this._state()));
   readonly canSubmit = computed(() => canSubmit(this._state()));
+  readonly cancellingId = computed(() => this._state().cancellingId);
+  readonly myReservations = computed(() =>
+    this._state().myReservations.filter((r) => r.status === 'CONFIRMED'),
+  );
 
   readonly slots = computed<readonly SlotDto[]>(() => {
     const s = this._state();
@@ -77,6 +83,7 @@ export class DashboardStore {
     this.wireSlotLoading();
     this.wireSubmission();
     this.wireRealtime();
+    this.wireCancellation();
     this.wireIdentityChanges();
   }
 
@@ -90,6 +97,7 @@ export class DashboardStore {
       const primeiro = resources?.[0];
       if (primeiro) this.selectResource(primeiro.id);
       else this.dispatch({ type: 'slots-loaded', slots: [] });
+      this.reloadReservations$.next();
     } catch (error) {
       this.dispatch({
         type: 'load-failed',
@@ -117,6 +125,11 @@ export class DashboardStore {
 
   dismissNotice(): void {
     this.dispatch({ type: 'notice-dismissed' });
+  }
+
+  cancelReservation(reservationId: string): void {
+    if (this._state().cancellingId) return;
+    this.cancel$.next(reservationId);
   }
 
   submit(): void {
@@ -179,6 +192,7 @@ export class DashboardStore {
                 // Reconcilia com o servidor: a resposta confirma o que é meu,
                 // e o refetch traz o efeito de reservas alheias concorrentes.
                 this.reloadSlots$.next();
+                this.reloadReservations$.next();
               }),
               catchError((error) => {
                 const apiError = toApiError(error);
@@ -230,11 +244,59 @@ export class DashboardStore {
       });
   }
 
+  private wireCancellation(): void {
+    this.cancel$
+      .pipe(
+        // exhaustMap também aqui: cancelar duas vezes é idempotente no
+        // servidor, mas não há motivo para gastar a segunda requisição.
+        exhaustMap((reservationId) => {
+          this.dispatch({ type: 'cancel-started', reservationId });
+
+          return this.api.cancel(reservationId).pipe(
+            tap((result) => {
+              this.dispatch({
+                type: 'cancel-succeeded',
+                changed: result.changed,
+              });
+              // Cancelar libera unidades: a grade e a lista mudam.
+              this.reloadSlots$.next();
+              this.reloadReservations$.next();
+            }),
+            catchError((error) => {
+              this.dispatch({
+                type: 'cancel-failed',
+                message: toApiError(error).message,
+              });
+              this.reloadReservations$.next();
+              return of(null);
+            }),
+          );
+        }),
+        takeUntilDestroyed(),
+      )
+      .subscribe();
+
+    this.reloadReservations$
+      .pipe(
+        switchMap(() =>
+          this.api.listMyReservations().pipe(
+            tap((reservations) =>
+              this.dispatch({ type: 'reservations-loaded', reservations }),
+            ),
+            catchError(() => EMPTY),
+          ),
+        ),
+        takeUntilDestroyed(),
+      )
+      .subscribe();
+  }
+
   private wireIdentityChanges(): void {
     // Trocar de usuário muda `reservedByMe` de todos os slots.
     effect(() => {
       this.identity.currentId();
       if (this._state().selectedResourceId) this.reloadSlots$.next();
+      this.reloadReservations$.next();
     });
   }
 

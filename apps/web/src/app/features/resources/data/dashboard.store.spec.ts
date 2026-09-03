@@ -75,8 +75,24 @@ describe('DashboardStore', () => {
     http.expectOne(`${API}/resources`).flush([recurso]);
     await Promise.resolve();
     http.expectOne(`${API}/resources/r1/slots`).flush(slots);
+    http.expectOne(`${API}/reservations`).flush([]);
     await pronto;
   }
+
+  const reserva = (id = 'res-1') => ({
+    id,
+    status: 'CONFIRMED' as const,
+    quantity: 1,
+    createdAt: '2026-09-04T00:00:00.000Z',
+    resource: { id: 'r1', name: 'Sala Azul', kind: 'EXCLUSIVE' as const },
+    slots: [
+      {
+        id: 's1',
+        startsAt: '2026-09-05T09:00:00.000Z',
+        endsAt: '2026-09-05T09:30:00.000Z',
+      },
+    ],
+  });
 
   it('carrega recursos e a grade do primeiro', async () => {
     await carregar();
@@ -145,9 +161,11 @@ describe('DashboardStore', () => {
       http.expectOne(`${API}/resources/r1/slots`).flush([
         slot('s1', { reservedUnits: 1, availableUnits: 0, reservedByMe: true }),
       ]);
+      http.expectOne(`${API}/reservations`).flush([reserva()]);
 
       expect(store.selection()).toEqual([]);
       expect(store.notice()?.tone).toBe('success');
+      expect(store.myReservations()).toHaveLength(1);
     });
 
     it('409 SLOT_UNAVAILABLE reconcilia a grade', async () => {
@@ -185,6 +203,45 @@ describe('DashboardStore', () => {
       expect(store.selection()).toEqual(['s1']);
       expect(store.notice()?.tone).toBe('error');
       http.expectNone(`${API}/resources/r1/slots`);
+    });
+  });
+
+  describe('cancelamento', () => {
+    it('cancela, recarrega a grade e a lista', async () => {
+      await carregar();
+      // popula a lista
+      store.cancelReservation('res-1');
+
+      http.expectOne(`${API}/reservations/res-1`).flush({ changed: true });
+      http.expectOne(`${API}/resources/r1/slots`).flush([slot('s1')]);
+      http.expectOne(`${API}/reservations`).flush([]);
+
+      expect(store.notice()?.tone).toBe('success');
+      expect(store.cancellingId()).toBeNull();
+    });
+
+    it('trata cancelamento repetido como informação, não erro', async () => {
+      await carregar();
+      store.cancelReservation('res-1');
+
+      // O servidor é idempotente: responde 200 com changed=false.
+      http.expectOne(`${API}/reservations/res-1`).flush({ changed: false });
+      http.expectOne(`${API}/resources/r1/slots`).flush([slot('s1')]);
+      http.expectOne(`${API}/reservations`).flush([]);
+
+      expect(store.notice()?.tone).toBe('info');
+    });
+
+    it('descarta cliques repetidos no cancelar', async () => {
+      await carregar();
+
+      store.cancelReservation('res-1');
+      store.cancelReservation('res-1');
+      store.cancelReservation('res-1');
+
+      expect(http.match(`${API}/reservations/res-1`)).toHaveLength(1);
+      // limpa o que ficou pendente
+      http.match(() => true).forEach((r) => r.flush({ changed: true }));
     });
   });
 

@@ -163,6 +163,29 @@ export function dashboardReducer(
     case 'notice-dismissed':
       return { ...state, notice: null };
 
+    case 'reservations-loaded':
+      return { ...state, myReservations: action.reservations };
+
+    case 'cancel-started':
+      return { ...state, cancellingId: action.reservationId, notice: null };
+
+    case 'cancel-succeeded':
+      return {
+        ...state,
+        cancellingId: null,
+        notice: action.changed
+          ? { tone: 'success', message: 'Reserva cancelada.' }
+          : // Cancelar de novo não é erro: o resultado desejado já vigora.
+            { tone: 'info', message: 'Esta reserva já estava cancelada.' },
+      };
+
+    case 'cancel-failed':
+      return {
+        ...state,
+        cancellingId: null,
+        notice: { tone: 'error', message: action.message },
+      };
+
     default:
       return state;
   }

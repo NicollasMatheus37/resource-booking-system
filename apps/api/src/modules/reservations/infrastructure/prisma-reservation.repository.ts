@@ -4,9 +4,11 @@ import type { Env } from '../../../config/env.schema';
 import { PrismaService } from '../../../database/prisma.service';
 import {
   AlreadyReservedError,
+  ReservationNotFoundError,
   SlotUnavailableError,
 } from '../domain/domain-error';
 import type {
+  CancelledReservation,
   ConfirmReservationCommand,
   ConfirmedReservation,
   ReservationRepository,
@@ -215,6 +217,121 @@ export class PrismaReservationRepository implements ReservationRepository {
     } catch (error) {
       throw this.translate(error, command);
     }
+  }
+
+  /**
+   * CANCELAMENTO ATÔMICO — o caminho inverso da concorrência.
+   *
+   * Cancelar sem cuidado é o jeito mais fácil de furar a invariante em sentido
+   * contrário: `reserved_units` abaixo de zero, ou uma unidade devolvida duas
+   * vezes porque dois cliques chegaram juntos.
+   *
+   * A proteção é um PORTÃO ATÔMICO: o `UPDATE` que muda o status da reserva de
+   * CONFIRMED para CANCELLED só afeta uma linha uma vez. Quem perder a corrida
+   * recebe `rowsAffected = 0` e sai sem tocar em contador nenhum.
+   */
+  async cancel(
+    reservationId: string,
+    userId: string,
+  ): Promise<CancelledReservation> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `SET LOCAL lock_timeout = '${this.env.DB_LOCK_TIMEOUT_MS}ms'`,
+      );
+
+      const reservation = await tx.reservation.findFirst({
+        where: { id: reservationId, userId },
+        select: { id: true, resourceId: true, quantity: true, status: true },
+      });
+
+      // Reserva de outro usuário responde igual a inexistente: não vazamos a
+      // existência de recurso alheio pela diferença entre 404 e 403.
+      if (!reservation) throw new ReservationNotFoundError(reservationId);
+
+      // O PORTÃO. `status = 'CONFIRMED'` na cláusula WHERE é o que torna a
+      // operação idempotente sob concorrência: a segunda chamada simultânea
+      // encontra a linha já CANCELLED e não afeta nada.
+      const gate = await tx.$executeRaw`
+        UPDATE reservations
+           SET status = 'CANCELLED'
+         WHERE id = ${reservationId}::uuid
+           AND user_id = ${userId}::uuid
+           AND status = 'CONFIRMED'
+      `;
+
+      if (gate === 0) {
+        // Já estava cancelada. Não é erro — cancelar duas vezes é uma coisa
+        // razoável de o usuário fazer, e o resultado desejado já é o vigente.
+        return {
+          id: reservation.id,
+          resourceId: reservation.resourceId,
+          releasedSlots: [],
+          changed: false,
+        };
+      }
+
+      const links = await tx.reservationSlot.findMany({
+        where: { reservationId },
+        select: { slotId: true, startsAt: true },
+        // MESMA ordenação da reserva (ADR 0011): manter a ordem global
+        // consistente entre confirmar e cancelar evita deadlock entre um
+        // cancelamento e uma reserva que disputam os mesmos slots.
+        orderBy: { startsAt: 'asc' },
+      });
+
+      // Libera as constraints parciais (exclusão e unicidade por usuário),
+      // permitindo que o slot seja reservado de novo, inclusive pelo mesmo
+      // usuário.
+      await tx.reservationSlot.updateMany({
+        where: { reservationId },
+        data: { status: 'CANCELLED' },
+      });
+
+      const releasedSlots: {
+        slotId: string;
+        reservedUnits: number;
+        unitsPerSlot: number;
+      }[] = [];
+
+      for (const link of links) {
+        // Espelho do UPDATE de reserva: condicional, no mesmo statement.
+        // O `>= quantity` impede contador negativo mesmo se algo já estiver
+        // inconsistente — e o CHECK do schema é a última rede.
+        const affected = await tx.$executeRaw`
+          UPDATE slots
+             SET reserved_units = reserved_units - ${reservation.quantity}
+           WHERE id = ${link.slotId}::uuid
+             AND reserved_units >= ${reservation.quantity}
+        `;
+
+        if (affected === 0) {
+          // Só acontece se o contador já estiver abaixo do esperado, o que
+          // significa corrupção. Abortar a transação inteira é mais seguro
+          // que devolver parcialmente.
+          throw new Error(
+            `Contador inconsistente no slot ${link.slotId} ao cancelar ${reservationId}`,
+          );
+        }
+
+        const current = await tx.slot.findUniqueOrThrow({
+          where: { id: link.slotId },
+          select: { reservedUnits: true, unitsPerSlot: true },
+        });
+
+        releasedSlots.push({
+          slotId: link.slotId,
+          reservedUnits: current.reservedUnits,
+          unitsPerSlot: current.unitsPerSlot,
+        });
+      }
+
+      return {
+        id: reservation.id,
+        resourceId: reservation.resourceId,
+        releasedSlots,
+        changed: true,
+      };
+    });
   }
 
   /**

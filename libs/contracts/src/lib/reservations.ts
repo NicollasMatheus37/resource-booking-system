@@ -17,3 +17,22 @@ export interface ReservationDto {
   readonly slotIds: readonly string[];
   readonly createdAt: string;
 }
+
+/** Uma reserva do usuário, como aparece em "minhas reservas". */
+export interface ReservationSummaryDto {
+  readonly id: string;
+  readonly status: ReservationStatus;
+  readonly quantity: number;
+  readonly createdAt: string;
+  readonly resource: {
+    readonly id: string;
+    readonly name: string;
+    readonly kind: 'EXCLUSIVE' | 'SHARED';
+  };
+  /** Ordenados por início. Uma reserva agrupa 1..N slots (ADR 0011). */
+  readonly slots: readonly {
+    readonly id: string;
+    readonly startsAt: string;
+    readonly endsAt: string;
+  }[];
+}

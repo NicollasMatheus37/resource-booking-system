@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import type {
   CreateReservationRequest,
   ReservationDto,
+  ReservationSummaryDto,
   ResourceDto,
   SlotDto,
 } from '@resource-booking/contracts';
@@ -30,5 +31,15 @@ export class ResourcesApi {
       // duplo desabilitando o botão (ADR 0004).
       headers: { 'Idempotency-Key': crypto.randomUUID() },
     });
+  }
+
+  listMyReservations(): Observable<ReservationSummaryDto[]> {
+    return this.http.get<ReservationSummaryDto[]>(`${this.base}/reservations`);
+  }
+
+  cancel(reservationId: string): Observable<{ changed: boolean }> {
+    return this.http.delete<{ changed: boolean }>(
+      `${this.base}/reservations/${reservationId}`,
+    );
   }
 }

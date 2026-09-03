@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { IdentityStore } from '../../../core/identity/identity.store';
 import { DashboardStore } from '../data/dashboard.store';
 import { ConnectionBadge } from '../ui/connection-badge';
+import { MyReservations } from '../ui/my-reservations';
 import { ResourceList } from '../ui/resource-list';
 import { SlotCell } from '../ui/slot-cell';
 
@@ -10,7 +11,13 @@ import { SlotCell } from '../ui/slot-cell';
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [DashboardStore],
-  imports: [FormsModule, ConnectionBadge, ResourceList, SlotCell],
+  imports: [
+    FormsModule,
+    ConnectionBadge,
+    MyReservations,
+    ResourceList,
+    SlotCell,
+  ],
   templateUrl: './dashboard.page.html',
 })
 export class DashboardPage implements OnInit {

@@ -15,6 +15,7 @@ export const API_ERROR_CODES = [
   'SLOT_NOT_FOUND',
   'RESOURCE_INACTIVE',
   'RESOURCE_NOT_FOUND',
+  'RESERVATION_NOT_FOUND',
   /** Slots de recursos diferentes na mesma reserva, ou lista vazia. */
   'INVALID_SELECTION',
   'TOO_MANY_SLOTS',

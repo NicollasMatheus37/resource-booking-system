@@ -52,6 +52,15 @@
         [selectedId]="store.resource()?.id ?? null"
         (selected)="store.selectResource($event)"
       />
+
+      <h2 class="mt-4 mb-2 px-1 text-sm font-semibold opacity-70">
+        Minhas reservas
+      </h2>
+      <app-my-reservations
+        [reservations]="store.myReservations()"
+        [cancellingId]="store.cancellingId()"
+        (cancelled)="store.cancelReservation($event)"
+      />
     </aside>
 
     <!-- Grade de horários -->

@@ -47,6 +47,19 @@ export interface ConfirmedReservation {
   }[];
 }
 
+export interface CancelledReservation {
+  readonly id: string;
+  readonly resourceId: string;
+  /** Vazio quando a reserva já estava cancelada — nada foi devolvido. */
+  readonly releasedSlots: readonly {
+    slotId: string;
+    reservedUnits: number;
+    unitsPerSlot: number;
+  }[];
+  /** `false` quando a chamada não teve efeito: cancelar é idempotente. */
+  readonly changed: boolean;
+}
+
 /**
  * Port de persistência. O use-case depende desta interface, nunca do Prisma.
  *
@@ -63,6 +76,16 @@ export interface ReservationRepository {
     key: string,
   ): Promise<ConfirmedReservation | null>;
   confirm(command: ConfirmReservationCommand): Promise<ConfirmedReservation>;
+
+  /**
+   * Cancela e devolve as unidades de todos os slots do grupo.
+   *
+   * Precisa ser IDEMPOTENTE: duas chamadas simultâneas não podem devolver
+   * unidades duas vezes. Cancelar é o caminho inverso da concorrência e é
+   * onde a invariante fura em sentido contrário — contador negativo, ou
+   * unidade devolvida em dobro.
+   */
+  cancel(reservationId: string, userId: string): Promise<CancelledReservation>;
 }
 
 export const RESERVATION_REPOSITORY = Symbol('ReservationRepository');

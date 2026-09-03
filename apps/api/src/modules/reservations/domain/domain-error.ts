@@ -80,3 +80,9 @@ export class InvalidQuantityError extends DomainError {
     super('INVALID_QUANTITY', message, details);
   }
 }
+
+export class ReservationNotFoundError extends DomainError {
+  constructor(reservationId: string) {
+    super('RESERVATION_NOT_FOUND', 'Reserva inexistente.', { reservationId });
+  }
+}
