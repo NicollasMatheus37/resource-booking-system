@@ -1,0 +1,17 @@
+node_modules
+dist
+tmp
+out-tsc
+.nx/cache
+.nx/workspace-data
+coverage
+
+.env
+.env.*
+!.env.example
+
+.DS_Store
+Thumbs.db
+
+*.log
+.angular
