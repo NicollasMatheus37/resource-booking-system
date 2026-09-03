@@ -1,11 +1,14 @@
 import {
+  AfterViewInit,
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   computed,
   effect,
   input,
   output,
   signal,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type {
@@ -32,6 +35,7 @@ import type {
       <label class="form-control">
         <span class="label-text text-sm">Nome</span>
         <input
+          #firstField
           class="input input-bordered input-sm"
           [(ngModel)]="name"
           name="name"
@@ -142,7 +146,15 @@ import type {
     </form>
   `,
 })
-export class ResourceForm {
+export class ResourceForm implements AfterViewInit {
+  private readonly firstField =
+    viewChild<ElementRef<HTMLInputElement>>('firstField');
+
+  /** O modal não é aberto por `showModal()`, então o foco vai na mão. */
+  ngAfterViewInit(): void {
+    this.firstField()?.nativeElement.focus();
+  }
+
   readonly editing = input<ResourceDto | null>(null);
   readonly saving = input(false);
   readonly submitted = output<CreateResourceRequest>();

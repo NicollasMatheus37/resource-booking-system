@@ -84,6 +84,33 @@ O segundo caso merece atenção: a constraint tem chave `resource_id`, não
 diferentes do mesmo recurso — o que aconteceria se a agenda fosse regerada com
 outra duração de slot.
 
+## Prova com múltiplas réplicas
+
+Os testes acima rodam contra um único processo. A afirmação central do
+ADR 0004 — *a garantia está no banco, não na aplicação* — só é verificável com
+processos separados, então isso foi testado à parte:
+
+```bash
+docker compose -f compose.yaml -f infra/docker/compose.scale.yaml \
+  up -d --scale api=3
+```
+
+Com três réplicas em portas distintas do host:
+
+| Cenário | Resultado |
+|---|---|
+| 4 usuários disputando 1 slot exclusivo, cada um numa réplica diferente | 1× `201`, 3× `409 SLOT_UNAVAILABLE` |
+| 40 pedidos de 2 unidades num slot de capacidade 30, distribuídos nas 3 réplicas | zero `5xx`, zero overbooking, contador coerente |
+
+O vencedor e os perdedores estavam em **processos diferentes**. Nenhum mutex,
+semáforo ou cache local teria funcionado aqui — e é exatamente por isso que a
+invariante vive no Postgres.
+
+> No segundo cenário, apenas 4 pedidos são confirmados porque o seed tem 4
+> usuários e a invariante 3 do ADR 0003 permite uma reserva por usuário por
+> slot. O teto de 30 unidades não chega a ser tocado; o que se verifica ali é
+> a ausência de overbooking e de erro técnico sob concorrência distribuída.
+
 ## O gargalo que permanece
 
 O teste prova **correção**, não vazão ilimitada. O Postgres serializa escritores

@@ -1,0 +1,21 @@
+# Override para demonstrar o fator VIII (concorrência por processo).
+#
+# O compose principal publica a porta 3000 fixa, porque o browser precisa de um
+# endereço estável para falar com a API. Porta fixa e múltiplas réplicas são
+# incompatíveis, então aqui a publicação vira uma FAIXA: cada réplica recebe
+# uma porta do host.
+#
+# Uso:
+#   docker compose -f compose.yaml -f infra/docker/compose.scale.yaml \
+#     up -d --scale api=3
+#
+# Isto NÃO é balanceamento de carga — para isso entraria um proxy reverso na
+# frente. O que se demonstra é que a aplicação é stateless: N processos
+# atendendo o mesmo banco mantêm a invariante, porque a garantia está no
+# Postgres e não em memória de processo (ADR 0004, 12-Factor VI).
+services:
+  api:
+    # `!override` porque o Compose CONCATENA listas de ports por padrão —
+    # sem isso, a porta fixa do arquivo base continuaria valendo.
+    ports: !override
+      - '3000-3009:3000'

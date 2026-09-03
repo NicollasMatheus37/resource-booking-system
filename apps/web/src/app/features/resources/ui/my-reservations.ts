@@ -34,7 +34,7 @@ import type { ReservationSummaryDto } from '@resource-booking/contracts';
 
               <button
                 type="button"
-                class="btn btn-ghost btn-xs text-error self-start"
+                class="btn btn-outline btn-xs self-start"
                 [disabled]="cancellingId() !== null"
                 [attr.aria-busy]="cancellingId() === reservation.id"
                 (click)="cancelled.emit(reservation.id)"
@@ -43,7 +43,7 @@ import type { ReservationSummaryDto } from '@resource-booking/contracts';
                   <span class="loading loading-spinner loading-xs"></span>
                   Cancelando…
                 } @else {
-                  Cancelar
+                  Cancelar reserva
                 }
               </button>
             </li>

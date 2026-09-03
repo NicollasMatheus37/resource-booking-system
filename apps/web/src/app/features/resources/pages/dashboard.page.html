@@ -13,7 +13,7 @@
           <option [value]="user.id">{{ user.name }}</option>
         }
       </select>
-      <span class="hidden text-xs opacity-50 sm:inline">
+      <span class="hidden text-xs opacity-70 sm:inline">
         identidade simulada
       </span>
     </div>
@@ -59,7 +59,7 @@
       <app-resource-list
         [resources]="store.resources()"
         [selectedId]="store.resource()?.id ?? null"
-        (selected)="store.selectResource($event)"
+        (selected)="onResourceSelected($event)"
       />
 
       <h2 class="mt-4 mb-2 px-1 text-sm font-semibold opacity-70">
@@ -88,13 +88,36 @@
             >
               editar
             </button>
-            <button
-              type="button"
-              class="btn btn-ghost btn-xs text-error"
-              (click)="store.deactivateResource(resource.id)"
-            >
-              desativar
-            </button>
+            <!--
+              Ação destrutiva: contorno neutro em vez de vermelho claro (que
+              reprovava no contraste em 11px) e confirmação explícita — o
+              sinal de perigo vem do passo a mais, não só da cor.
+            -->
+            @if (confirmingDeactivate()) {
+              <span class="text-sm">Desativar este recurso?</span>
+              <button
+                type="button"
+                class="btn btn-error btn-xs"
+                (click)="confirmDeactivate(resource.id)"
+              >
+                Sim, desativar
+              </button>
+              <button
+                type="button"
+                class="btn btn-outline btn-xs"
+                (click)="confirmingDeactivate.set(false)"
+              >
+                Não
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn-outline btn-xs"
+                (click)="confirmingDeactivate.set(true)"
+              >
+                desativar
+              </button>
+            }
           </div>
         </div>
         @if (resource.description) {
@@ -208,9 +231,13 @@
 
 <!-- Cadastro de recurso -->
 @if (store.editor(); as editor) {
-  <dialog class="modal modal-open">
+  <dialog
+    class="modal modal-open"
+    aria-modal="true"
+    aria-labelledby="editor-title"
+  >
     <div class="modal-box">
-      <h3 class="mb-3 text-lg font-semibold">
+      <h3 id="editor-title" class="mb-3 text-lg font-semibold">
         {{ editor.mode === 'edit' ? 'Editar recurso' : 'Novo recurso' }}
       </h3>
       <app-resource-form

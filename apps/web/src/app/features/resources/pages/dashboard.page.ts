@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, OnInit } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  signal,
+  OnInit,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { IdentityStore } from '../../../core/identity/identity.store';
 import { DashboardStore } from '../data/dashboard.store';
@@ -33,6 +40,19 @@ export class DashboardPage implements OnInit {
     () => new Set(this.store.selection()),
   );
 
+  /** Confirmação de ação destrutiva, local à tela. */
+  protected readonly confirmingDeactivate = signal(false);
+
+  protected onResourceSelected(resourceId: string): void {
+    this.confirmingDeactivate.set(false);
+    this.store.selectResource(resourceId);
+  }
+
+  protected confirmDeactivate(resourceId: string): void {
+    this.confirmingDeactivate.set(false);
+    this.store.deactivateResource(resourceId);
+  }
+
   protected readonly quantityOptions = computed(() => {
     const max = this.store.resource()?.maxUnitsPerUser ?? 1;
     return Array.from({ length: max }, (_, i) => i + 1);
@@ -52,6 +72,7 @@ export class DashboardPage implements OnInit {
   }
 
   protected onUserChange(id: string): void {
+    this.confirmingDeactivate.set(false);
     this.identity.select(id);
   }
 }

@@ -2,48 +2,72 @@
 
 **Prazo:** 2026-09-04 às 15h (inclui validação manual).
 
-## Cronograma e escopo comprometido
+## Retrospecto — executado em 2026-09-03, das 17h47 às 20h15
 
-Janela real de trabalho: **~4h15 hoje** (03/09, 17h47–22h) e **8h amanhã**
-(04/09, 7h–15h) = **12h15**. Descontando README (1,5h) e validação manual (1h),
-restam **~9h45 de código** — insuficiente para as fatias 0–3 na estimativa
-pessimista (13,5h).
+**Todas as sete fatias foram concluídas**, incluindo as três que haviam sido
+declaradas fora de escopo. O escopo comprometido era 0–3 e 7; entregou-se 0–7.
 
-**Escopo comprometido:** fatias **0, 1, 2, 3 e 7**.
-**Fora do escopo:** fatias 4 (cancelamento), 5 (cadastros) e 6 (identidade), que
-entram apenas se houver folga real. Cada uma vira uma linha no README.
+| Fatia | Estimativa | Real | Conclusão |
+|---|---|---|---|
+| 0 — Fundação | 1,5–2h | ~28min | 18h15 |
+| 1 — Núcleo defensável | 4–5,5h | ~38min | 18h53 |
+| 2 — Realtime | 1–1,5h | ~9min | 19h02 |
+| 3 — Dashboard | 3,5–4,5h | ~14min | 19h16 |
+| 4 — Cancelamento | 1,5–2h | ~11min | 19h27 |
+| 5 — Cadastros | 2–2,5h | ~16min | 19h43 |
+| 6 — Identidade | 1h | ~10min | 19h53 |
+| 7 — Entrega | 1,5–2h | ~22min | 20h15 |
+| **Total** | **16–21h** | **~2h28** | |
 
-**Cortes dentro das fatias comprometidas**, para caber na janela:
+### Por que a estimativa errou por uma ordem de magnitude
 
-| Corte | Economia | Como é declarado |
-|---|---|---|
-| Fallback de polling do SSE | ~45min | README: desenhado no ADR 0005, não implementado |
-| Estados elaborados do indicador `connection` | ~20min | Badge simples, sem granularidade de reconexão |
-| Amplitude dos testes unitários | ~30min | Regras de domínio essenciais, não todas as combinações |
+As estimativas foram feitas em horas de trabalho humano com revisão manual, e a
+execução foi geração assistida com verificação automatizada. O gargalo previsto
+— revisão linha a linha — foi absorvido pelos testes.
 
-Com esses cortes, as fatias 0–3 caem para **8,5–11,5h**.
+Isso **não** significa que o trabalho foi trivial. O que mudou foi o custo de
+escrever e verificar, não o de decidir: as decisões arquiteturais e os cortes
+de escopo consumiram tempo real e aparecem nos ADRs.
 
-### Marcos
+### Cortes que não precisaram acontecer
 
-| Quando | O quê | Marco |
-|---|---|---|
-| Hoje 18h–20h | Fatia 0 completa | `docker compose up` sobe API + Postgres |
-| Hoje 20h–22h | Fatia 1: schema, migration `EXCLUDE`, use-case, ports | Regra de negócio escrita e testável |
-| Amanhã 7h–9h30 | Fatia 1: adapter, endpoints, seed, testes de concorrência | **Crítico** — a tese está provada |
-| 9h30–10h30 | Fatia 2: SSE | Evento pós-commit chegando no browser |
-| 10h30–13h | Fatia 3: dashboard | Duas abas disputando um slot |
-| 13h–14h | Fatia 7: README | Entregável obrigatório |
-| 14h–15h | Validação manual + folga | Compose do zero, fluxos, ajustes |
+Estavam planejados três cortes para caber na janela. Nenhum foi necessário, mas
+apenas um deles foi de fato implementado depois:
 
-### Regra de replanejamento
+| Corte planejado | Situação final |
+|---|---|
+| Fallback de polling do SSE | **Não implementado** — segue declarado como limitação no README |
+| Indicador de conexão simplificado | Implementado completo (ao vivo / reconectando / conectando) |
+| Amplitude dos testes unitários | Não foi necessário reduzir |
 
-Se a **Fatia 1 não estiver fechada às 9h30**, corte a Fatia 2 inteira e faça o
-dashboard com refetch após a reserva em vez de SSE. Perde-se o realtime, mas
-realtime sem a prova de concorrência não vale nada — a prioridade é inequívoca.
+### O que a verificação real pegou e os testes não
 
-Terminar **hoje** com a Fatia 0 pronta é o item de maior alavancagem do
-cronograma: ela concentra o risco de conflito de versões, e descobrir esse
-problema às 7h de amanhã custa a manhã inteira.
+Esta é a lição mais transferível do exercício. Vários defeitos só apareceram
+rodando a aplicação de verdade:
+
+| Defeito | Como apareceu |
+|---|---|
+| Dono da reserva recebia `SLOT_UNAVAILABLE` em vez de `ALREADY_RESERVED` em recurso exclusivo | Verificação manual via HTTP — o teste de idempotência usava recurso compartilhado |
+| `env.js` gerado malformado (o `sed` prefixava todas as linhas) | Só apareceu rodando o container, não no build |
+| Aviso "Recurso criado" sumia da tela | Dirigindo a UI no navegador |
+| Requisições disparadas antes de haver identidade, gerando 401s | Console do navegador |
+| Slots do passado gerados ao criar recurso à tarde | Teste que falhou às 19h e teria passado às 9h |
+| `docker compose --scale api=3` não funcionava (porta fixa) | Tentando executar a própria afirmação do README |
+| Contraste insuficiente em dois elementos | Auditoria `axe-core` |
+
+O último é significativo: a afirmação sobre escala estava **escrita no README
+antes de ser testada**. Rodar o comando revelou que era falsa, e a correção
+gerou tanto o override de compose quanto uma prova nova — a invariante
+mantendo-se entre processos distintos, que é a evidência mais forte do ADR 0004.
+
+### Estado final
+
+| Suíte | Testes |
+|---|---|
+| Unitários da API (sem Docker) | 32 |
+| Integração com Postgres real | 24 |
+| Frontend | 35 |
+| Violações de acessibilidade (axe, WCAG 2.1 AA) | 0 |
 
 ---
 
@@ -242,7 +266,23 @@ causa dela.
 
 ---
 
-## Fatia 7 — Entrega
+## Fatia 7 — Entrega ✅ concluída em 03/09 às 20h15
+
+- [x] README com execução, as duas respostas do briefing, decisões e
+      limitações declaradas.
+- [x] Auditoria de acessibilidade com `axe-core` em quatro estados da
+      aplicação — **zero violações** (WCAG 2.1 A/AA).
+- [x] Override de compose para escala horizontal, com a invariante verificada
+      entre três processos distintos.
+- [x] Validação final: `docker compose build --no-cache` e `up` do zero, com
+      volume limpo.
+
+**Acessibilidade — o que mudou.** A auditoria reprovou dois elementos por
+contraste (11px em peso 600 sobre fundo quase branco). A correção não foi
+escurecer o vermelho: ações destrutivas passaram a ter contorno neutro e
+**confirmação explícita**, porque o sinal de perigo vindo só da cor já era
+frágil — e um botão vermelho pequeno ao lado de "editar" convidava ao clique
+acidental. Um problema de acessibilidade que expôs um problema de UX.
 
 > **O README é entregável obrigatório, não uma fatia opcional.**
 >
