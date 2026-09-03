@@ -1,6 +1,7 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { DomainErrorFilter } from './shared/filters/domain-error.filter';
 import { loadEnv } from './config/env.schema';
 
 async function bootstrap() {
@@ -14,6 +15,9 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
   app.enableCors({ origin: env.CORS_ORIGINS });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  // Erro de domínio vira status + code semântico, nunca 500 (ADR 0004).
+  app.useGlobalFilters(new DomainErrorFilter());
 
   // 12-Factor IX: encerra conexões e drena o processo em SIGTERM/SIGINT.
   app.enableShutdownHooks();

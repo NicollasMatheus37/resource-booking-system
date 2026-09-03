@@ -34,6 +34,13 @@
         "jestConfig": "apps/api/jest.config.cts",
         "passWithNoTests": true
       }
+    },
+    "test-integration": {
+      "executor": "@nx/jest:jest",
+      "options": {
+        "jestConfig": "apps/api/jest.integration.config.cts",
+        "passWithNoTests": false
+      }
     }
   }
 }

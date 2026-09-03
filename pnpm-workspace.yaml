@@ -12,6 +12,9 @@ allowBuilds:
   nx: true
   prisma: true
   unrs-resolver: true
+  cpu-features: true
+  protobufjs: true
+  ssh2: true
   '@nestjs/core': false
 minimumReleaseAgeExclude:
   - daisyui@5.7.28

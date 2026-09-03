@@ -1,24 +1,34 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { PrismaService } from '../../database/prisma.service';
+import { Public } from '../../modules/identity/public.decorator';
 
 /**
  * 12-Factor IX — Descartabilidade.
  *
- * `/health` (liveness) responde se o processo está vivo e não deve consultar
+ * `/health` (liveness) responde se o processo está vivo e NÃO consulta
  * dependências: um banco lento derrubaria o container sem necessidade.
  *
  * `/ready` (readiness) responde se o processo pode receber tráfego, e por isso
- * verifica as dependências. A checagem real do banco entra na Fatia 1, quando
- * o Prisma existir.
+ * verifica o banco.
  */
 @Controller()
 export class HealthController {
+  constructor(private readonly prisma: PrismaService) {}
+
+  @Public()
   @Get('health')
   liveness() {
     return { status: 'ok' };
   }
 
+  @Public()
   @Get('ready')
-  readiness() {
-    return { status: 'ok', checks: {} };
+  async readiness() {
+    try {
+      await this.prisma.ping();
+    } catch {
+      throw new ServiceUnavailableException('Banco indisponível.');
+    }
+    return { status: 'ok', checks: { database: 'ok' } };
   }
 }

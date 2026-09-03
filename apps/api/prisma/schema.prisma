@@ -1,0 +1,133 @@
+// Modelo de domínio do ADR 0003. As invariantes que o Prisma NÃO consegue
+// expressar (constraint de exclusão por intervalo, índices parciais, CHECKs)
+// vivem numa migration SQL manual — ver `migrations/*/migration.sql` e o
+// ADR 0004. Ler apenas este arquivo dá uma visão incompleta das garantias.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ResourceKind {
+  /// Reservar toma o recurso inteiro na janela: sala de reunião, vaga numerada.
+  EXCLUSIVE
+  /// N unidades intercambiáveis na janela: setor de garagem, lote de ingressos.
+  SHARED
+}
+
+enum ReservationStatus {
+  CONFIRMED
+  CANCELLED
+}
+
+model User {
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String
+  email        String        @unique
+  createdAt    DateTime      @default(now()) @map("created_at")
+  reservations Reservation[]
+
+  @@map("users")
+}
+
+model Resource {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  kind        ResourceKind
+
+  /// Reservas simultâneas aceitas por slot. Sempre 1 quando EXCLUSIVE.
+  unitsPerSlot Int @map("units_per_slot")
+
+  /// Teto de unidades que um único usuário pode tomar num slot.
+  maxUnitsPerUser Int @map("max_units_per_user")
+
+  /// Teto de slots numa única reserva — 4 = 2h em janelas de 30min (ADR 0011).
+  maxSlotsPerReservation Int @map("max_slots_per_reservation")
+
+  /// Descritivo apenas: quantas pessoas cabem. NUNCA entra em cálculo de
+  /// disponibilidade — ver a distinção no ADR 0003.
+  seats Int?
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  slots        Slot[]
+  reservations Reservation[]
+
+  @@map("resources")
+}
+
+model Slot {
+  id         String   @id @default(uuid()) @db.Uuid
+  resourceId String   @map("resource_id") @db.Uuid
+  startsAt   DateTime @map("starts_at") @db.Timestamptz(3)
+  endsAt     DateTime @map("ends_at") @db.Timestamptz(3)
+
+  /// Herdados do recurso na geração da agenda.
+  unitsPerSlot Int @map("units_per_slot")
+
+  /// Contador disputado. Só é alterado por UPDATE atômico condicional (ADR 0004),
+  /// nunca por leitura seguida de escrita.
+  reservedUnits Int @default(0) @map("reserved_units")
+
+  resource         Resource          @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  reservationSlots ReservationSlot[]
+
+  @@unique([resourceId, startsAt])
+  @@index([resourceId, startsAt])
+  @@map("slots")
+}
+
+model Reservation {
+  id         String            @id @default(uuid()) @db.Uuid
+  resourceId String            @map("resource_id") @db.Uuid
+  userId     String            @map("user_id") @db.Uuid
+  quantity   Int               @default(1)
+  status     ReservationStatus @default(CONFIRMED)
+
+  /// Defesa em profundidade contra retry de rede (ADR 0004). A UI já impede
+  /// o clique duplo; esta chave cobre o que a UI não controla.
+  idempotencyKey String? @map("idempotency_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  resource Resource          @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slots    ReservationSlot[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, status])
+  @@map("reservations")
+}
+
+/// Junção reserva↔slot. Os campos denormalizados abaixo existem por um motivo
+/// específico: constraints e índices parciais do Postgres só enxergam colunas da
+/// própria tabela. Sem eles, as invariantes 1 e 3 do ADR 0003 não seriam
+/// verificáveis pelo banco e voltariam para a aplicação — onde são falsas por
+/// construção, já que a API roda em N réplicas.
+model ReservationSlot {
+  reservationId String @map("reservation_id") @db.Uuid
+  slotId        String @map("slot_id") @db.Uuid
+
+  /// Denormalizados do slot: alimentam a constraint de exclusão por intervalo.
+  resourceId String   @map("resource_id") @db.Uuid
+  startsAt   DateTime @map("starts_at") @db.Timestamptz(3)
+  endsAt     DateTime @map("ends_at") @db.Timestamptz(3)
+
+  /// Denormalizados da reserva: alimentam os índices parciais.
+  userId    String            @map("user_id") @db.Uuid
+  status    ReservationStatus
+  exclusive Boolean
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  slot        Slot        @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  @@id([reservationId, slotId])
+  @@index([slotId])
+  @@map("reservation_slots")
+}

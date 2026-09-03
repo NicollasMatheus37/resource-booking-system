@@ -8,15 +8,28 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "importHelpers": true,
-    "target": "es2015",
+    "target": "es2022",
     "module": "esnext",
-    "lib": ["es2020", "dom"],
+    "lib": [
+      "es2023",
+      "dom"
+    ],
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
     "paths": {
-      "@resource-booking/contracts": ["./libs/contracts/src/index.ts"],
-      "@resource-booking/testing": ["./libs/testing/src/index.ts"]
-    }
+      "@resource-booking/contracts": [
+        "./libs/contracts/src/index.ts"
+      ],
+      "@resource-booking/testing": [
+        "./libs/testing/src/index.ts"
+      ]
+    },
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true
   },
-  "exclude": ["node_modules", "tmp"]
+  "exclude": [
+    "node_modules",
+    "tmp"
+  ]
 }

@@ -32,6 +32,19 @@ export const envSchema = z.object({
         .filter(Boolean),
     ),
 
+  /**
+   * Teto do pool de conexões (ADR 0004, admission control). Baixo de
+   * propósito: sob contenção é melhor recusar rápido que esgotar o Postgres.
+   */
+  DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
+
+  /**
+   * Timeouts curtos: o perdedor de uma disputa falha rápido em vez de
+   * empilhar conexão. Aplicados por transação com SET LOCAL.
+   */
+  DB_LOCK_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
+  DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+
   /** Janela de slot e horizonte de geração da agenda (ADR 0003). */
   SLOT_DURATION_MINUTES: z.coerce.number().int().positive().default(30),
   SCHEDULE_HORIZON_DAYS: z.coerce.number().int().positive().default(7),
