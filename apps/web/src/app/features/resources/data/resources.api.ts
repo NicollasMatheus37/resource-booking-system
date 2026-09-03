@@ -1,6 +1,8 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import type {
+  CreateResourceRequest,
+  UpdateResourceRequest,
   CreateReservationRequest,
   ReservationDto,
   ReservationSummaryDto,
@@ -17,6 +19,21 @@ export class ResourcesApi {
 
   listResources(): Observable<ResourceDto[]> {
     return this.http.get<ResourceDto[]>(`${this.base}/resources`);
+  }
+
+  createResource(body: CreateResourceRequest): Observable<ResourceDto> {
+    return this.http.post<ResourceDto>(`${this.base}/resources`, body);
+  }
+
+  updateResource(
+    id: string,
+    body: UpdateResourceRequest,
+  ): Observable<ResourceDto> {
+    return this.http.patch<ResourceDto>(`${this.base}/resources/${id}`, body);
+  }
+
+  deactivateResource(id: string): Observable<ResourceDto> {
+    return this.http.delete<ResourceDto>(`${this.base}/resources/${id}`);
   }
 
   listSlots(resourceId: string): Observable<SlotDto[]> {

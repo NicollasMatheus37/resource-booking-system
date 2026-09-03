@@ -1,5 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
+import { generateSchedule } from '../src/modules/resources/domain/schedule.ts';
 
 /**
  * 12-Factor XII — processo administrativo one-off, rodado no mesmo ambiente e
@@ -20,8 +21,6 @@ const prisma = new PrismaClient({
 
 const SLOT_MINUTES = Number(process.env.SLOT_DURATION_MINUTES ?? 30);
 const HORIZON_DAYS = Number(process.env.SCHEDULE_HORIZON_DAYS ?? 7);
-const DAY_START_HOUR = 8;
-const DAY_END_HOUR = 18;
 
 const USERS = [
   { name: 'Ana Souza', email: 'ana@exemplo.com' },
@@ -78,28 +77,6 @@ const RESOURCES = [
   },
 ];
 
-/** Slots discretos alinhados à grade, do dia de hoje até o horizonte. */
-function generateSlots(from: Date, days: number): { startsAt: Date; endsAt: Date }[] {
-  const slots: { startsAt: Date; endsAt: Date }[] = [];
-  const perDay = ((DAY_END_HOUR - DAY_START_HOUR) * 60) / SLOT_MINUTES;
-
-  for (let day = 0; day < days; day += 1) {
-    const base = new Date(from);
-    base.setUTCDate(base.getUTCDate() + day);
-    base.setUTCHours(DAY_START_HOUR, 0, 0, 0);
-
-    for (let i = 0; i < perDay; i += 1) {
-      const startsAt = new Date(base.getTime() + i * SLOT_MINUTES * 60_000);
-      slots.push({
-        startsAt,
-        endsAt: new Date(startsAt.getTime() + SLOT_MINUTES * 60_000),
-      });
-    }
-  }
-
-  return slots;
-}
-
 async function main(): Promise<void> {
   // Idempotente: rodar de novo recompõe o estado inicial sem duplicar.
   await prisma.reservationSlot.deleteMany();
@@ -110,7 +87,12 @@ async function main(): Promise<void> {
 
   await prisma.user.createMany({ data: USERS });
 
-  const grid = generateSlots(new Date(), HORIZON_DAYS);
+  // Mesmo gerador usado pelo cadastro de recursos: duplicar a regra entre
+  // seed e aplicação já causou divergência uma vez.
+  const grid = generateSchedule(new Date(), {
+    slotMinutes: SLOT_MINUTES,
+    horizonDays: HORIZON_DAYS,
+  });
 
   for (const resource of RESOURCES) {
     const created = await prisma.resource.create({ data: resource });

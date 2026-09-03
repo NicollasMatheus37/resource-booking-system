@@ -30,6 +30,9 @@ export interface DashboardState {
   readonly myReservations: readonly ReservationSummaryDto[];
   /** Reserva com cancelamento em voo — desabilita só o botão dela. */
   readonly cancellingId: string | null;
+  /** Formulário de cadastro: null = fechado. */
+  readonly editor: { mode: 'create' } | { mode: 'edit'; resource: ResourceDto } | null;
+  readonly savingResource: boolean;
 }
 
 export const initialState: DashboardState = {
@@ -45,6 +48,8 @@ export const initialState: DashboardState = {
   notice: null,
   myReservations: [],
   cancellingId: null,
+  editor: null,
+  savingResource: false,
 };
 
 export type DashboardAction =
@@ -75,4 +80,10 @@ export type DashboardAction =
   | { type: 'reservations-loaded'; reservations: readonly ReservationSummaryDto[] }
   | { type: 'cancel-started'; reservationId: string }
   | { type: 'cancel-succeeded'; changed: boolean }
-  | { type: 'cancel-failed'; message: string };
+  | { type: 'cancel-failed'; message: string }
+  | { type: 'editor-opened'; resource: ResourceDto | null }
+  | { type: 'editor-closed' }
+  | { type: 'resource-save-started' }
+  | { type: 'resource-saved' }
+  | { type: 'notice-shown'; notice: Notice }
+  | { type: 'resource-save-failed'; message: string };

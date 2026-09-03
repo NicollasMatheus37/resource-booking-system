@@ -46,7 +46,16 @@
   <div class="grid gap-4 lg:grid-cols-[280px_1fr]">
     <!-- Recursos -->
     <aside>
-      <h2 class="mb-2 px-1 text-sm font-semibold opacity-70">Recursos</h2>
+      <div class="mb-2 flex items-center justify-between px-1">
+        <h2 class="text-sm font-semibold opacity-70">Recursos</h2>
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs"
+          (click)="store.openEditor()"
+        >
+          + novo
+        </button>
+      </div>
       <app-resource-list
         [resources]="store.resources()"
         [selectedId]="store.resource()?.id ?? null"
@@ -68,9 +77,25 @@
       @if (store.resource(); as resource) {
         <div class="flex flex-wrap items-baseline justify-between gap-2">
           <h2 class="text-lg font-semibold">{{ resource.name }}</h2>
-          <p class="text-sm opacity-60">
-            até {{ resource.maxSlotsPerReservation }} horário(s) por reserva
-          </p>
+          <div class="flex items-center gap-2">
+            <p class="text-sm opacity-60">
+              até {{ resource.maxSlotsPerReservation }} horário(s) por reserva
+            </p>
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs"
+              (click)="store.openEditor(resource)"
+            >
+              editar
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs text-error"
+              (click)="store.deactivateResource(resource.id)"
+            >
+              desativar
+            </button>
+          </div>
         </div>
         @if (resource.description) {
           <p class="text-sm opacity-70">{{ resource.description }}</p>
@@ -179,4 +204,24 @@
       }
     </button>
   </div>
+}
+
+<!-- Cadastro de recurso -->
+@if (store.editor(); as editor) {
+  <dialog class="modal modal-open">
+    <div class="modal-box">
+      <h3 class="mb-3 text-lg font-semibold">
+        {{ editor.mode === 'edit' ? 'Editar recurso' : 'Novo recurso' }}
+      </h3>
+      <app-resource-form
+        [editing]="editor.mode === 'edit' ? editor.resource : null"
+        [saving]="store.savingResource()"
+        (submitted)="store.saveResource($event)"
+        (cancelled)="store.closeEditor()"
+      />
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button type="button" (click)="store.closeEditor()">fechar</button>
+    </form>
+  </dialog>
 }

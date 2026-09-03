@@ -179,6 +179,37 @@ export function dashboardReducer(
             { tone: 'info', message: 'Esta reserva já estava cancelada.' },
       };
 
+    case 'editor-opened':
+      return {
+        ...state,
+        editor: action.resource
+          ? { mode: 'edit', resource: action.resource }
+          : { mode: 'create' },
+        notice: null,
+      };
+
+    case 'editor-closed':
+      return { ...state, editor: null, savingResource: false };
+
+    case 'resource-save-started':
+      return { ...state, savingResource: true, notice: null };
+
+    case 'resource-saved':
+      // Sem aviso aqui de propósito: o aviso é emitido DEPOIS do refresh, que
+      // pode trocar o recurso selecionado — e trocar de recurso limpa o aviso.
+      return { ...state, savingResource: false, editor: null };
+
+    case 'notice-shown':
+      return { ...state, notice: action.notice };
+
+    case 'resource-save-failed':
+      // O formulário CONTINUA aberto: fechar perderia o que o usuário digitou.
+      return {
+        ...state,
+        savingResource: false,
+        notice: { tone: 'error', message: action.message },
+      };
+
     case 'cancel-failed':
       return {
         ...state,

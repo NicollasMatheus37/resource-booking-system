@@ -27,3 +27,27 @@ export interface SlotDto {
   /** Se o usuário corrente já tem reserva confirmada neste slot. */
   readonly reservedByMe: boolean;
 }
+
+export interface CreateResourceRequest {
+  readonly name: string;
+  readonly description?: string | null;
+  readonly kind: ResourceKind;
+  /**
+   * Reservas simultâneas por slot. Obrigatoriamente 1 em EXCLUSIVE.
+   * IMUTÁVEL após a criação — ver ADR de cadastros no README.
+   */
+  readonly unitsPerSlot: number;
+  readonly maxUnitsPerUser: number;
+  readonly maxSlotsPerReservation: number;
+  readonly seats?: number | null;
+}
+
+/** `kind` e `unitsPerSlot` não aparecem aqui: são imutáveis. */
+export interface UpdateResourceRequest {
+  readonly name?: string;
+  readonly description?: string | null;
+  readonly maxUnitsPerUser?: number;
+  readonly maxSlotsPerReservation?: number;
+  readonly seats?: number | null;
+  readonly active?: boolean;
+}

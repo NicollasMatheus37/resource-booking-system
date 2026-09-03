@@ -13,9 +13,9 @@ import { PrismaService } from '../../../database/prisma.service';
 export class ResourcesQuery {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listResources(): Promise<ResourceDto[]> {
+  async listResources(includeInactive = false): Promise<ResourceDto[]> {
     const resources = await this.prisma.resource.findMany({
-      where: { active: true },
+      where: includeInactive ? {} : { active: true },
       orderBy: [{ kind: 'asc' }, { name: 'asc' }],
     });
 

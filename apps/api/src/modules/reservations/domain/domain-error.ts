@@ -86,3 +86,9 @@ export class ReservationNotFoundError extends DomainError {
     super('RESERVATION_NOT_FOUND', 'Reserva inexistente.', { reservationId });
   }
 }
+
+export class InvalidResourceConfigError extends DomainError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super('INVALID_RESOURCE_CONFIG', message, details);
+  }
+}

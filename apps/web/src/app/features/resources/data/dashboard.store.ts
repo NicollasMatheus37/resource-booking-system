@@ -1,6 +1,10 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import type { SlotDto } from '@resource-booking/contracts';
+import type {
+  CreateResourceRequest,
+  ResourceDto,
+  SlotDto,
+} from '@resource-booking/contracts';
 import { EMPTY, catchError, exhaustMap, of, switchMap, tap } from 'rxjs';
 import { Subject } from 'rxjs';
 import { blamedSlotId, toApiError } from '../../../core/http/api-error';
@@ -18,6 +22,7 @@ import {
   initialState,
   type DashboardAction,
   type DashboardState,
+  type Notice,
 } from './dashboard.state';
 
 /**
@@ -44,6 +49,8 @@ export class DashboardStore {
   private readonly reloadSlots$ = new Subject<void>();
   private readonly cancel$ = new Subject<string>();
   private readonly reloadReservations$ = new Subject<void>();
+  private readonly saveResource$ = new Subject<CreateResourceRequest>();
+  private readonly deactivate$ = new Subject<string>();
 
   readonly state = this._state.asReadonly();
   readonly resources = computed(() => this._state().resources);
@@ -58,6 +65,8 @@ export class DashboardStore {
   readonly invalidSelection = computed(() => invalidSelection(this._state()));
   readonly canSubmit = computed(() => canSubmit(this._state()));
   readonly cancellingId = computed(() => this._state().cancellingId);
+  readonly editor = computed(() => this._state().editor);
+  readonly savingResource = computed(() => this._state().savingResource);
   readonly myReservations = computed(() =>
     this._state().myReservations.filter((r) => r.status === 'CONFIRMED'),
   );
@@ -84,6 +93,7 @@ export class DashboardStore {
     this.wireSubmission();
     this.wireRealtime();
     this.wireCancellation();
+    this.wireResourceEditing();
     this.wireIdentityChanges();
   }
 
@@ -130,6 +140,22 @@ export class DashboardStore {
   cancelReservation(reservationId: string): void {
     if (this._state().cancellingId) return;
     this.cancel$.next(reservationId);
+  }
+
+  openEditor(resource: ResourceDto | null = null): void {
+    this.dispatch({ type: 'editor-opened', resource });
+  }
+
+  closeEditor(): void {
+    this.dispatch({ type: 'editor-closed' });
+  }
+
+  saveResource(input: CreateResourceRequest): void {
+    this.saveResource$.next(input);
+  }
+
+  deactivateResource(id: string): void {
+    this.deactivate$.next(id);
   }
 
   submit(): void {
@@ -291,10 +317,114 @@ export class DashboardStore {
       .subscribe();
   }
 
+  private wireResourceEditing(): void {
+    this.saveResource$
+      .pipe(
+        exhaustMap((input) => {
+          const editor = this._state().editor;
+          this.dispatch({ type: 'resource-save-started' });
+
+          const request$ =
+            editor?.mode === 'edit'
+              ? // `kind` e `unitsPerSlot` não são enviados: são imutáveis, e
+                // mandá-los só produziria um 422 confuso.
+                this.api.updateResource(editor.resource.id, {
+                  name: input.name,
+                  description: input.description,
+                  maxUnitsPerUser: input.maxUnitsPerUser,
+                  maxSlotsPerReservation: input.maxSlotsPerReservation,
+                  seats: input.seats,
+                })
+              : this.api.createResource(input);
+
+          return request$.pipe(
+            tap((resource) => {
+              this.dispatch({ type: 'resource-saved' });
+              this.refreshResources(resource.id, editor?.mode !== 'edit', {
+                tone: 'success',
+                message:
+                  editor?.mode === 'edit'
+                    ? 'Recurso atualizado.'
+                    : 'Recurso criado, com a agenda gerada.',
+              });
+            }),
+            catchError((error) => {
+              this.dispatch({
+                type: 'resource-save-failed',
+                message: toApiError(error).message,
+              });
+              return of(null);
+            }),
+          );
+        }),
+        takeUntilDestroyed(),
+      )
+      .subscribe();
+
+    this.deactivate$
+      .pipe(
+        exhaustMap((id) =>
+          this.api.deactivateResource(id).pipe(
+            tap(() => {
+              this.dispatch({ type: 'resource-saved' });
+              this.refreshResources(null, true, {
+                tone: 'success',
+                message:
+                  'Recurso desativado. As reservas existentes seguem válidas.',
+              });
+            }),
+            catchError((error) => {
+              this.dispatch({
+                type: 'resource-save-failed',
+                message: toApiError(error).message,
+              });
+              return of(null);
+            }),
+          ),
+        ),
+        takeUntilDestroyed(),
+      )
+      .subscribe();
+  }
+
+  /**
+   * Recarrega a lista e reposiciona a seleção sem deixar a tela vazia.
+   *
+   * O aviso é emitido no FIM, e não antes: `resource-selected` limpa o aviso
+   * por design (uma mensagem sobre o recurso anterior confundiria), então
+   * anunciar antes do reposicionamento faria o sucesso desaparecer da tela.
+   */
+  private refreshResources(
+    preferId: string | null,
+    select: boolean,
+    notice?: Notice,
+  ): void {
+    this.api.listResources().subscribe({
+      next: (resources) => {
+        this.dispatch({ type: 'resources-loaded', resources });
+
+        const atual = this._state().selectedResourceId;
+        const aindaExiste = resources.some((r) => r.id === atual);
+
+        if (select && preferId && resources.some((r) => r.id === preferId)) {
+          this.selectResource(preferId);
+        } else if (!aindaExiste) {
+          const primeiro = resources[0];
+          if (primeiro) this.selectResource(primeiro.id);
+          else this.dispatch({ type: 'slots-loaded', slots: [] });
+        }
+
+        if (notice) this.dispatch({ type: 'notice-shown', notice });
+      },
+    });
+  }
+
   private wireIdentityChanges(): void {
     // Trocar de usuário muda `reservedByMe` de todos os slots.
     effect(() => {
-      this.identity.currentId();
+      // Sem identidade, toda requisição volta 401. O efeito roda uma vez no
+      // registro, antes de o seletor de usuário ter carregado.
+      if (!this.identity.currentId()) return;
       if (this._state().selectedResourceId) this.reloadSlots$.next();
       this.reloadReservations$.next();
     });

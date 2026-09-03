@@ -4,6 +4,7 @@ import { IdentityStore } from '../../../core/identity/identity.store';
 import { DashboardStore } from '../data/dashboard.store';
 import { ConnectionBadge } from '../ui/connection-badge';
 import { MyReservations } from '../ui/my-reservations';
+import { ResourceForm } from '../ui/resource-form';
 import { ResourceList } from '../ui/resource-list';
 import { SlotCell } from '../ui/slot-cell';
 
@@ -15,6 +16,7 @@ import { SlotCell } from '../ui/slot-cell';
     FormsModule,
     ConnectionBadge,
     MyReservations,
+    ResourceForm,
     ResourceList,
     SlotCell,
   ],
