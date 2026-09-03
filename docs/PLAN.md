@@ -58,7 +58,7 @@ no fim deste documento.
 
 ---
 
-## Fatia 0 — Fundação ✅ concluída em 03/09 ~19h50
+## Fatia 0 — Fundação ✅ concluída em 03/09 às 18h15
 
 - [x] Scaffolding Nx: `apps/api`, `apps/web`, `libs/contracts`, `libs/testing`.
 - [x] Versões resolvidas contra o registry e pinadas (dois desvios no ADR 0001).
@@ -93,28 +93,44 @@ stack, não desabafo):
 
 ---
 
-## Fatia 1 — O núcleo defensável ← *a fatia que importa*
+## Fatia 1 — O núcleo defensável ✅ concluída em 03/09 às 18h53
 
-Backend completo da reserva, sem UI.
+- [x] Schema Prisma: `Resource`, `Slot`, `Reservation`, `ReservationSlot`.
+- [x] Migration manual com `EXCLUDE USING gist`, `UNIQUE` parcial e `CHECK`s.
+- [x] Use-case `CreateReservation` atrás de ports, sem Prisma nem HTTP.
+- [x] Adapter Prisma com `UPDATE` atômico condicional e transação única.
+- [x] Exception filter traduzindo erro de domínio para `code` (ADR 0006).
+- [x] `GET /resources`, `GET /resources/:id/slots`, `POST /reservations`.
+- [x] Identidade simulada (`IdentityGuard`) — antecipada da Fatia 6, porque o
+      `userId` atravessa o domínio desde o início e o guard custou minutos.
+- [x] Seed com os dois `kind` e 700 slots.
+- [x] 22 testes unitários (sem Docker) + 5 de concorrência (Testcontainers).
+- [x] `docs/concurrency.md` com a prova.
 
-- Schema Prisma: `Resource`, `Slot`, `Reservation`, `ReservationSlot`.
-- Migration **manual** com o que o Prisma não expressa: `EXCLUDE USING gist`,
-  `UNIQUE` parcial, `CHECK` (ADRs 0003 e 0004).
-- Use-case `CreateReservation`, atrás de ports, sem conhecer Prisma nem HTTP:
-  validações de domínio, ordenação por `startsAt`, transação única.
-- Adapter Prisma: `UPDATE` atômico condicional e `INSERT` dos slots.
-- Exception filter mapeando erros de domínio para o contrato `code` (ADR 0006).
-- `GET /resources` e `GET /resources/:id/slots`.
-- Seed: usuários fixos, recursos dos dois `kind`, gerador de slots de 30min.
-- **Testes:** unitários do use-case com fakes + os cinco cenários de
-  concorrência do ADR 0009 com Testcontainers.
-- `docs/concurrency.md` com o resultado dos testes.
+**Verificado na prática:**
 
-**Pronto quando:** os testes de concorrência passam com N alto. A partir daqui,
-as duas perguntas do briefing têm resposta demonstrável mesmo sem frontend.
+| Verificação | Resultado |
+|---|---|
+| 200 usuários, 1 slot exclusivo | 1× `201`, 199× `409 SLOT_UNAVAILABLE`, zero `5xx` |
+| 200 usuários, quantidades 1–4, slot de 30 unidades | zero overbooking, contador igual à soma confirmada |
+| 60 usuários, janelas sobrepostas, metade em ordem invertida | zero deadlock, zero sucesso parcial |
+| Constraints via `psql` | exclusão, `CHECK` de contador e `CHECK` de coerência todas bloqueiam |
+| `docker compose up` do zero + seed + fluxo real | reserva, conflito e limites com o `code` correto |
 
-> **Ponto de corte 1.** Se algo der muito errado, esta fatia + README já é uma
-> entrega defensável, ainda que incompleta.
+**Bug real encontrado pela verificação manual:** em recurso `EXCLUSIVE` o
+contador atinge o teto com uma reserva, então o `UPDATE` atômico falhava antes
+da constraint de unicidade — e o próprio dono recebia `SLOT_UNAVAILABLE` em vez
+de `ALREADY_RESERVED`. Os testes de concorrência não pegaram porque o cenário de
+idempotência usava recurso `SHARED`. Corrigido e coberto por teste novo.
+
+**Outros percalços:** o Prisma 7 moveu a connection string para
+`prisma.config.ts` e passou a exigir driver adapter; ele devolve código próprio
+(`P2002`) em vez do SQLSTATE, com o nome da constraint só no texto; o último
+estágio do Dockerfile vira o alvo padrão do build; e o `zsh` não faz
+word-splitting, o que produziu um falso negativo na primeira verificação manual.
+
+> **Ponto de corte 1 atingido.** As duas perguntas do briefing já têm resposta
+> demonstrável, com prova executável, mesmo sem frontend.
 
 ---
 
