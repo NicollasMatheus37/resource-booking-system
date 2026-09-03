@@ -39,7 +39,7 @@ export class DashboardPage implements OnInit {
   });
 
   async ngOnInit(): Promise<void> {
-    await this.identity.load();
+    // A identidade já foi resolvida pelo guard da rota (ADR 0008).
     await this.store.init();
   }
 

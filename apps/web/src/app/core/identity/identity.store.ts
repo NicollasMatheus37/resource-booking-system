@@ -1,5 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { APP_CONFIG } from '../config/app-config';
 
 export interface UserDto {
@@ -31,18 +32,33 @@ export class IdentityStore {
     () => this._users().find((u) => u.id === this._currentId()) ?? null,
   );
 
-  async load(): Promise<void> {
-    const users = await this.http
-      .get<UserDto[]>(`${this.config.apiUrl}/users`)
-      .toPromise();
+  private loading: Promise<void> | null = null;
 
-    this._users.set(users ?? []);
+  /**
+   * Carrega os usuários uma vez só. Idempotente porque é chamada pelo guard
+   * de rota, que pode disparar em navegações concorrentes.
+   */
+  ensureLoaded(): Promise<void> {
+    this.loading ??= this.load();
+    return this.loading;
+  }
 
-    // Escolhe o primeiro se não houver um válido guardado.
+  private async load(): Promise<void> {
+    const users = await firstValueFrom(
+      this.http.get<UserDto[]>(`${this.config.apiUrl}/users`),
+    ).catch(() => [] as UserDto[]);
+
+    this._users.set(users);
+
+    // Descarta uma identidade guardada que não existe mais (banco recriado,
+    // seed rodado de novo). Sem isso o usuário ficaria preso em 401.
     const atual = this._currentId();
-    if (!atual || !(users ?? []).some((u) => u.id === atual)) {
-      this.select(users?.[0]?.id ?? null);
-    }
+    if (atual && !users.some((u) => u.id === atual)) this.select(null);
+  }
+
+  /** Chamado no 401: a identidade guardada não vale mais. */
+  clear(): void {
+    this.select(null);
   }
 
   select(id: string | null): void {
