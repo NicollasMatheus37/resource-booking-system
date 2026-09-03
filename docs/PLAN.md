@@ -58,16 +58,38 @@ no fim deste documento.
 
 ---
 
-## Fatia 0 — Fundação (curta)
+## Fatia 0 — Fundação ✅ concluída em 03/09 ~19h50
 
-- Scaffolding Nx: `apps/api`, `apps/web`, `libs/contracts`, `libs/testing`.
-- Resolver e **pinar** as versões atuais contra o registry (não assumir).
-- `compose.yaml` com Postgres, serviço `migrate` e API.
-- Módulo `config` com schema `zod` validado no boot (ADR 0010).
-- `/health` e `/ready`.
+- [x] Scaffolding Nx: `apps/api`, `apps/web`, `libs/contracts`, `libs/testing`.
+- [x] Versões resolvidas contra o registry e pinadas (dois desvios no ADR 0001).
+- [x] `compose.yaml` com Postgres 18, API e frontend. Serviço `migrate` entra na
+      Fatia 1, junto com o Prisma.
+- [x] Módulo `config` com schema `zod` validado no boot (ADR 0010).
+- [x] `/health` e `/ready`.
+- [x] Tailwind 4 + DaisyUI 5 compilando no bundle do Angular.
+- [x] `env.js` gerado em runtime, com allowlist e serialização por `jq`.
 
-**Pronto quando:** `docker compose up` sobe API e banco, e uma variável de
-ambiente ausente derruba o processo com mensagem clara.
+**Verificado na prática:**
+
+| Verificação | Resultado |
+|---|---|
+| `docker compose up --build` do zero | 3 serviços saudáveis |
+| `GET /api/health` e `/api/ready` | `200` |
+| API sem `DATABASE_URL` | mensagem legível apontando a variável, exit 1 |
+| `env.js` com payload `";alert(1);//</script>` | escapado dentro da string; JS válido |
+| `nx run-many -t lint test build` | 8/8 tarefas passando |
+
+**Percalços que consumiram tempo** (registrados por serem informação real sobre a
+stack, não desabafo):
+
+- O gerador do Angular recusa o setup de TypeScript project references que o modo
+  de pnpm workspaces do Nx 23 impõe. Levou a refazer o scaffolding no modo
+  integrado — ver ADR 0001.
+- `corepack` foi removido do Node 26; as imagens instalam pnpm via `npm -g`.
+- Postgres 18 mudou o mount recomendado para `/var/lib/postgresql`.
+- A primeira versão do `env.js` saía malformada (o `sed` prefixava todas as
+  linhas) e o erro de config vinha como stack trace de injeção. Ambos só
+  apareceram porque a fatia foi testada de verdade, não só compilada.
 
 ---
 
