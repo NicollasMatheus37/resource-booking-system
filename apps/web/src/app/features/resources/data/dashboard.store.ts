@@ -1,0 +1,244 @@
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import type { SlotDto } from '@resource-booking/contracts';
+import { EMPTY, catchError, exhaustMap, of, switchMap, tap } from 'rxjs';
+import { Subject } from 'rxjs';
+import { blamedSlotId, toApiError } from '../../../core/http/api-error';
+import { IdentityStore } from '../../../core/identity/identity.store';
+import { AvailabilityStream } from '../../../core/realtime/availability.stream';
+import { ResourcesApi } from './resources.api';
+import {
+  canSubmit,
+  dashboardReducer,
+  invalidSelection,
+  maxSlots,
+  selectedResource,
+} from './dashboard.reducer';
+import {
+  initialState,
+  type DashboardAction,
+  type DashboardState,
+} from './dashboard.state';
+
+/**
+ * Store da tela (ADR 0006).
+ *
+ * Divisão de responsabilidade explícita:
+ * - **RxJS** para o que é assíncrono e composto no tempo: stream do SSE,
+ *   fetch, cancelamento, `exhaustMap` contra requisições sobrepostas.
+ * - **Signals** para o estado lido pelo template, com `computed` derivando o
+ *   que a UI precisa e change detection eficiente sob `OnPush`.
+ *
+ * Todo o estado passa pelo reducer puro. Não existe caminho de código que
+ * atualize a tela por fora dele.
+ */
+@Injectable()
+export class DashboardStore {
+  private readonly api = inject(ResourcesApi);
+  private readonly stream = inject(AvailabilityStream);
+  private readonly identity = inject(IdentityStore);
+
+  private readonly _state = signal<DashboardState>(initialState);
+
+  private readonly submit$ = new Subject<void>();
+  private readonly reloadSlots$ = new Subject<void>();
+
+  readonly state = this._state.asReadonly();
+  readonly resources = computed(() => this._state().resources);
+  readonly status = computed(() => this._state().status);
+  readonly connection = computed(() => this._state().connection);
+  readonly notice = computed(() => this._state().notice);
+  readonly submitting = computed(() => this._state().submitting);
+  readonly quantity = computed(() => this._state().quantity);
+  readonly selection = computed(() => this._state().selection);
+  readonly resource = computed(() => selectedResource(this._state()));
+  readonly maxSlots = computed(() => maxSlots(this._state()));
+  readonly invalidSelection = computed(() => invalidSelection(this._state()));
+  readonly canSubmit = computed(() => canSubmit(this._state()));
+
+  readonly slots = computed<readonly SlotDto[]>(() => {
+    const s = this._state();
+    return s.slotOrder.map((id) => s.slots[id]).filter(Boolean);
+  });
+
+  /** Slots agrupados por dia, que é como a grade é desenhada. */
+  readonly days = computed(() => {
+    const grupos = new Map<string, SlotDto[]>();
+    for (const slot of this.slots()) {
+      const dia = slot.startsAt.slice(0, 10);
+      const atual = grupos.get(dia);
+      if (atual) atual.push(slot);
+      else grupos.set(dia, [slot]);
+    }
+    return [...grupos.entries()].map(([date, slots]) => ({ date, slots }));
+  });
+
+  constructor() {
+    this.wireSlotLoading();
+    this.wireSubmission();
+    this.wireRealtime();
+    this.wireIdentityChanges();
+  }
+
+  // --- comandos vindos da UI ---------------------------------------------
+
+  async init(): Promise<void> {
+    this.dispatch({ type: 'load-started' });
+    try {
+      const resources = await this.api.listResources().toPromise();
+      this.dispatch({ type: 'resources-loaded', resources: resources ?? [] });
+      const primeiro = resources?.[0];
+      if (primeiro) this.selectResource(primeiro.id);
+      else this.dispatch({ type: 'slots-loaded', slots: [] });
+    } catch (error) {
+      this.dispatch({
+        type: 'load-failed',
+        message: toApiError(error).message,
+      });
+    }
+  }
+
+  selectResource(resourceId: string): void {
+    this.dispatch({ type: 'resource-selected', resourceId });
+    this.reloadSlots$.next();
+  }
+
+  toggleSlot(slotId: string): void {
+    this.dispatch({ type: 'slot-toggled', slotId });
+  }
+
+  clearSelection(): void {
+    this.dispatch({ type: 'selection-cleared' });
+  }
+
+  setQuantity(quantity: number): void {
+    this.dispatch({ type: 'quantity-changed', quantity });
+  }
+
+  dismissNotice(): void {
+    this.dispatch({ type: 'notice-dismissed' });
+  }
+
+  submit(): void {
+    if (!this.canSubmit()) return;
+    this.submit$.next();
+  }
+
+  // --- fiação ------------------------------------------------------------
+
+  private wireSlotLoading(): void {
+    this.reloadSlots$
+      .pipe(
+        switchMap(() => {
+          const resourceId = this._state().selectedResourceId;
+          if (!resourceId) return EMPTY;
+
+          // switchMap: trocar de recurso rápido cancela o fetch anterior, que
+          // senão chegaria depois e sobrescreveria a grade certa.
+          return this.api.listSlots(resourceId).pipe(
+            tap((slots) => this.dispatch({ type: 'slots-loaded', slots })),
+            catchError((error) => {
+              this.dispatch({
+                type: 'load-failed',
+                message: toApiError(error).message,
+              });
+              return EMPTY;
+            }),
+          );
+        }),
+        takeUntilDestroyed(),
+      )
+      .subscribe();
+  }
+
+  private wireSubmission(): void {
+    this.submit$
+      .pipe(
+        // exhaustMap: enquanto uma reserva está em voo, cliques repetidos são
+        // DESCARTADOS. É a segunda linha de defesa contra o clique duplo,
+        // caso a UI falhe em desabilitar o botão (ADR 0006).
+        exhaustMap(() => {
+          const s = this._state();
+          const resource = selectedResource(s);
+          if (!resource) return EMPTY;
+
+          this.dispatch({ type: 'submit-started' });
+
+          return this.api
+            .reserve({
+              resourceId: resource.id,
+              slotIds: [...s.selection],
+              quantity: resource.kind === 'SHARED' ? s.quantity : undefined,
+            })
+            .pipe(
+              tap((reservation) => {
+                this.dispatch({
+                  type: 'submit-succeeded',
+                  slotIds: reservation.slotIds,
+                });
+                // Reconcilia com o servidor: a resposta confirma o que é meu,
+                // e o refetch traz o efeito de reservas alheias concorrentes.
+                this.reloadSlots$.next();
+              }),
+              catchError((error) => {
+                const apiError = toApiError(error);
+                this.dispatch({
+                  type: 'submit-failed',
+                  code: apiError.code,
+                  message: apiError.message,
+                  slotId: blamedSlotId(apiError),
+                });
+
+                // Em conflito a grade está desatualizada: reconciliar.
+                // Em falha de rede NÃO se mexe no estado local — não sabemos
+                // o que aconteceu do outro lado.
+                if (apiError.code !== 'INTERNAL') this.reloadSlots$.next();
+
+                return of(null);
+              }),
+            );
+        }),
+        takeUntilDestroyed(),
+      )
+      .subscribe();
+  }
+
+  private wireRealtime(): void {
+    this.stream
+      .connect()
+      .pipe(takeUntilDestroyed())
+      .subscribe((message) => {
+        if (message.kind === 'open') {
+          this.dispatch({ type: 'connection-changed', connection: 'live' });
+          // Ao (re)conectar, refaz o snapshot: pode ter havido mudança
+          // enquanto o stream estava caído (ADR 0005).
+          if (this._state().selectedResourceId) this.reloadSlots$.next();
+          return;
+        }
+
+        if (message.kind === 'error') {
+          this.dispatch({ type: 'connection-changed', connection: 'offline' });
+          return;
+        }
+
+        this.dispatch({
+          type: 'availability-changed',
+          slotId: message.payload.slotId,
+          reservedUnits: message.payload.reservedUnits,
+          unitsPerSlot: message.payload.unitsPerSlot,
+        });
+      });
+  }
+
+  private wireIdentityChanges(): void {
+    // Trocar de usuário muda `reservedByMe` de todos os slots.
+    effect(() => {
+      this.identity.currentId();
+      if (this._state().selectedResourceId) this.reloadSlots$.next();
+    });
+  }
+
+  private dispatch(action: DashboardAction): void {
+    this._state.update((state) => dashboardReducer(state, action));
+  }
+}

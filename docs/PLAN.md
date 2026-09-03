@@ -163,26 +163,39 @@ cliente refaz o snapshot, e o `GET` é a fonte da verdade.
 
 ---
 
-## Fatia 3 — Dashboard
+## Fatia 3 — Dashboard ✅ concluída em 03/09 às 19h16
 
-Frontend do fluxo principal. `userId` já atravessa o domínio desde a Fatia 1,
-vindo do header sem validação — a casca da identidade vem depois.
+- [x] Tailwind + DaisyUI, componentes de apresentação com `OnPush`.
+- [x] Reducer puro (`dashboard.reducer.ts`) — todo o estado passa por ele.
+- [x] Store com signals + RxJS: `switchMap` no fetch, `exhaustMap` na submissão.
+- [x] Lista de recursos → grade de slots de 30min agrupada por dia.
+- [x] Seleção em carrinho não-contígua e barra de confirmação (ADR 0011).
+- [x] Estados visuais do slot, incluindo *selecionado mas indisponível*.
+- [x] Tabela de tratamento de falhas do ADR 0006, decidindo pelo `code`.
+- [x] Indicador de conexão (ao vivo / reconectando / conectando).
+- [x] Seletor de usuário — a casca da identidade, antecipada da Fatia 6.
+- [x] **Testes:** 17 no reducer (sem TestBed) + 7 no store com HTTP e SSE
+      falsos, incluindo delta concorrente durante reserva em voo.
 
-- Tailwind + DaisyUI, tema e componentes base (ADR 0007).
-- `ResourcesStore`: reducer puro, snapshot + SSE via `scan`, `toSignal`.
-- Lista de recursos → grade de slots de 30min.
-- Seleção em carrinho, painel de confirmação, "Avançar" (ADR 0011).
-- Estados visuais do slot, incluindo *selecionado mas indisponível*.
-- Tratamento das falhas da tabela do ADR 0006.
-- Indicador de `connection` (live / reconectando / polling).
-- **Testes:** reducer puro, e o cenário de delta SSE chegando durante uma
-  reserva em voo.
+**Verificado com duas abas reais**, dirigidas por Playwright na imagem oficial
+(sem instalar nada no host):
 
-**Pronto quando:** duas abas lado a lado disputam o mesmo slot e a perdedora
-recebe `409` com a grade atualizando sozinha.
+| Passo | Resultado |
+|---|---|
+| Conexão SSE | badge "ao vivo" |
+| Ana marca 3 horários não-contíguos | barra mostra "3 horário(s) selecionado(s)" |
+| Ana confirma | "3 horários reservados" |
+| Bruno, **sem recarregar** | grade atualiza e avisa "Um horário da sua seleção acabou de ser reservado por outra pessoa" |
+| Seleção de Bruno | slot **permanece**, marcado "tomado"; "Avançar" desabilitado |
 
-> **Ponto de corte 2.** Fatias 0–3 entregam o briefing inteiro. Tudo abaixo é
-> complemento.
+Capturas em [`img/`](img/).
+
+**Percalços:** `waitUntil: 'networkidle'` do Playwright nunca resolve com SSE
+aberto — a conexão é permanente por design; usar `domcontentloaded`. O Chromium
+do host não tinha as libs de sistema, resolvido rodando o driver na imagem
+oficial com `--network host`.
+
+> **Ponto de corte 2 atingido.** As fatias 0–3 entregam o briefing inteiro.
 
 ---
 

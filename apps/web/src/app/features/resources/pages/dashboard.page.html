@@ -1,0 +1,173 @@
+<div class="mx-auto flex max-w-7xl flex-col gap-4">
+  <!-- Cabeçalho: identidade e estado da conexão -->
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-2">
+      <label class="text-sm opacity-70" for="user-select">Usuário</label>
+      <select
+        id="user-select"
+        class="select select-sm select-bordered"
+        [ngModel]="identity.currentId()"
+        (ngModelChange)="onUserChange($event)"
+      >
+        @for (user of identity.users(); track user.id) {
+          <option [value]="user.id">{{ user.name }}</option>
+        }
+      </select>
+      <span class="hidden text-xs opacity-50 sm:inline">
+        identidade simulada
+      </span>
+    </div>
+
+    <app-connection-badge [state]="store.connection()" />
+  </header>
+
+  <!-- Aviso de resultado -->
+  @if (store.notice(); as notice) {
+    <div
+      class="alert"
+      [class.alert-success]="notice.tone === 'success'"
+      [class.alert-error]="notice.tone === 'error'"
+      [class.alert-warning]="notice.tone === 'warning'"
+      [class.alert-info]="notice.tone === 'info'"
+      role="alert"
+      aria-live="polite"
+    >
+      <span class="flex-1">{{ notice.message }}</span>
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs"
+        (click)="store.dismissNotice()"
+      >
+        fechar
+      </button>
+    </div>
+  }
+
+  <div class="grid gap-4 lg:grid-cols-[280px_1fr]">
+    <!-- Recursos -->
+    <aside>
+      <h2 class="mb-2 px-1 text-sm font-semibold opacity-70">Recursos</h2>
+      <app-resource-list
+        [resources]="store.resources()"
+        [selectedId]="store.resource()?.id ?? null"
+        (selected)="store.selectResource($event)"
+      />
+    </aside>
+
+    <!-- Grade de horários -->
+    <main class="flex flex-col gap-3">
+      @if (store.resource(); as resource) {
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 class="text-lg font-semibold">{{ resource.name }}</h2>
+          <p class="text-sm opacity-60">
+            até {{ resource.maxSlotsPerReservation }} horário(s) por reserva
+          </p>
+        </div>
+        @if (resource.description) {
+          <p class="text-sm opacity-70">{{ resource.description }}</p>
+        }
+      }
+
+      @if (store.status() === 'loading') {
+        <div class="flex flex-col gap-2">
+          @for (i of [1, 2, 3]; track i) {
+            <div class="skeleton h-16 w-full"></div>
+          }
+        </div>
+      } @else if (store.status() === 'error') {
+        <div class="alert alert-error" role="alert">
+          Não foi possível carregar os horários.
+        </div>
+      } @else {
+        @for (day of store.days(); track day.date) {
+          <section class="card bg-base-100 shadow-sm">
+            <div class="card-body gap-2 p-3">
+              <h3 class="text-sm font-medium capitalize opacity-70">
+                {{ formatDay(day.date) }}
+              </h3>
+              <div
+                class="grid grid-cols-3 gap-1 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8"
+              >
+                @for (slot of day.slots; track slot.id) {
+                  <app-slot-cell
+                    [slot]="slot"
+                    [selected]="selectionSet().has(slot.id)"
+                    [invalid]="invalidSet().has(slot.id)"
+                    (toggled)="store.toggleSlot($event)"
+                  />
+                }
+              </div>
+            </div>
+          </section>
+        } @empty {
+          <p class="opacity-60">Nenhum horário disponível neste período.</p>
+        }
+      }
+    </main>
+  </div>
+</div>
+
+<!-- Barra de confirmação: só aparece com seleção -->
+@if (store.selection().length > 0) {
+  <div
+    class="bg-base-100 border-base-300 sticky bottom-0 mt-4 flex flex-wrap items-center gap-3 border-t p-3 shadow-lg"
+  >
+    <span class="text-sm">
+      <strong>{{ store.selection().length }}</strong> horário(s) selecionado(s)
+    </span>
+
+    @if (store.resource(); as resource) {
+      @if (resource.kind === 'SHARED') {
+        <label class="flex items-center gap-2 text-sm">
+          Unidades
+          <select
+            class="select select-xs select-bordered"
+            [ngModel]="store.quantity()"
+            (ngModelChange)="store.setQuantity(+$event)"
+          >
+            @for (n of quantityOptions(); track n) {
+              <option [value]="n">{{ n }}</option>
+            }
+          </select>
+        </label>
+      }
+    }
+
+    @if (store.invalidSelection().length > 0) {
+      <span class="text-error text-sm" role="alert">
+        {{ store.invalidSelection().length }} horário(s) da seleção já foram
+        reservados — remova para continuar.
+      </span>
+    }
+
+    <span class="flex-1"></span>
+
+    <button
+      type="button"
+      class="btn btn-ghost btn-sm"
+      [disabled]="store.submitting()"
+      (click)="store.clearSelection()"
+    >
+      Limpar
+    </button>
+
+    <!--
+      Desabilitado durante a requisição: a UI é a PRIMEIRA linha de defesa
+      contra o clique duplo (ADR 0006). O exhaustMap no store é a segunda.
+    -->
+    <button
+      type="button"
+      class="btn btn-primary btn-sm"
+      [disabled]="!store.canSubmit()"
+      [attr.aria-busy]="store.submitting()"
+      (click)="store.submit()"
+    >
+      @if (store.submitting()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        Reservando…
+      } @else {
+        Avançar
+      }
+    </button>
+  </div>
+}
