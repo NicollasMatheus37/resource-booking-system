@@ -1,4 +1,7 @@
-import type { ResourceKind } from '@resource-booking/contracts';
+import type {
+  ResourceKind,
+  SlotAvailabilityChanged,
+} from '@resource-booking/contracts';
 
 /** Visão mínima do recurso que o use-case precisa para decidir. */
 export interface ResourceSnapshot {
@@ -63,6 +66,22 @@ export interface ReservationRepository {
 }
 
 export const RESERVATION_REPOSITORY = Symbol('ReservationRepository');
+
+/**
+ * Publicação de mudanças de disponibilidade (ADR 0005).
+ *
+ * O use-case depende desta interface e não sabe que o transporte é SSE —
+ * trocar por WebSocket ou por um barramento entre réplicas não toca em regra
+ * de negócio.
+ *
+ * CONTRATO IMPORTANTE: só é chamado DEPOIS do commit. Publicar dentro da
+ * transação anunciaria uma disponibilidade que ainda pode sofrer rollback.
+ */
+export interface AvailabilityPublisher {
+  publish(events: readonly SlotAvailabilityChanged[]): void;
+}
+
+export const AVAILABILITY_PUBLISHER = Symbol('AvailabilityPublisher');
 
 /** Injetável para tornar "agora" determinístico nos testes. */
 export interface Clock {

@@ -9,12 +9,13 @@ import {
   TooManySlotsError,
 } from '../domain/domain-error';
 import {
+  AVAILABILITY_PUBLISHER,
   CLOCK,
   RESERVATION_REPOSITORY,
+  type AvailabilityPublisher,
   type Clock,
   type ConfirmedReservation,
   type ReservationRepository,
-  type SlotSnapshot,
 } from './ports';
 
 export interface CreateReservationInput {
@@ -43,6 +44,8 @@ export class CreateReservationUseCase {
     @Inject(RESERVATION_REPOSITORY)
     private readonly repository: ReservationRepository,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(AVAILABILITY_PUBLISHER)
+    private readonly publisher: AvailabilityPublisher,
   ) {}
 
   async execute(input: CreateReservationInput): Promise<ConfirmedReservation> {
@@ -108,7 +111,7 @@ export class CreateReservationUseCase {
       (a, b) => a.startsAt.getTime() - b.startsAt.getTime(),
     );
 
-    return this.repository.confirm({
+    const reservation = await this.repository.confirm({
       resourceId: resource.id,
       userId: input.userId,
       quantity,
@@ -116,6 +119,20 @@ export class CreateReservationUseCase {
       slots: ordered,
       idempotencyKey: input.idempotencyKey,
     });
+
+    // APÓS o commit (ADR 0005). `confirm` só resolve quando a transação
+    // fechou; publicar antes anunciaria disponibilidade sujeita a rollback.
+    this.publisher.publish(
+      reservation.updatedSlots.map((slot) => ({
+        type: 'slot-availability-changed' as const,
+        slotId: slot.slotId,
+        resourceId: resource.id,
+        reservedUnits: slot.reservedUnits,
+        unitsPerSlot: slot.unitsPerSlot,
+      })),
+    );
+
+    return reservation;
   }
 
   private assertQuantity(

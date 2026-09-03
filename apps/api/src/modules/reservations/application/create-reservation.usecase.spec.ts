@@ -5,21 +5,40 @@ import {
   slotSequence,
 } from '@resource-booking/testing';
 import { CreateReservationUseCase } from './create-reservation.usecase';
-import type { Clock, ReservationRepository } from './ports';
+import type {
+  AvailabilityPublisher,
+  Clock,
+  ReservationRepository,
+} from './ports';
+import type { SlotAvailabilityChanged } from '@resource-booking/contracts';
 
 const NOW = new Date('2026-09-05T08:00:00.000Z');
 const clock: Clock = { now: () => NOW };
 
+class RecordingPublisher implements AvailabilityPublisher {
+  readonly batches: (readonly SlotAvailabilityChanged[])[] = [];
+
+  publish(events: readonly SlotAvailabilityChanged[]): void {
+    this.batches.push(events);
+  }
+}
+
 function build(
   resources = [aResource()],
   slots = slotSequence(4),
-): { useCase: CreateReservationUseCase; repo: FakeReservationRepository } {
+): {
+  useCase: CreateReservationUseCase;
+  repo: FakeReservationRepository;
+  publisher: RecordingPublisher;
+} {
   const repo = new FakeReservationRepository(resources, slots);
+  const publisher = new RecordingPublisher();
   const useCase = new CreateReservationUseCase(
     repo as unknown as ReservationRepository,
     clock,
+    publisher,
   );
-  return { useCase, repo };
+  return { useCase, repo, publisher };
 }
 
 describe('CreateReservationUseCase', () => {
@@ -264,6 +283,50 @@ describe('CreateReservationUseCase', () => {
           quantity: 1.5,
         }),
       ).rejects.toMatchObject({ code: 'INVALID_QUANTITY' });
+    });
+  });
+
+  describe('publicação de disponibilidade (ADR 0005)', () => {
+    it('publica um delta por slot reservado', async () => {
+      const { useCase, publisher } = build();
+
+      await useCase.execute({
+        resourceId: 'resource-1',
+        userId: 'user-1',
+        slotIds: ['slot-1', 'slot-2'],
+      });
+
+      expect(publisher.batches).toHaveLength(1);
+      expect(publisher.batches[0]).toEqual([
+        {
+          type: 'slot-availability-changed',
+          slotId: 'slot-1',
+          resourceId: 'resource-1',
+          reservedUnits: 1,
+          unitsPerSlot: 1,
+        },
+        {
+          type: 'slot-availability-changed',
+          slotId: 'slot-2',
+          resourceId: 'resource-1',
+          reservedUnits: 1,
+          unitsPerSlot: 1,
+        },
+      ]);
+    });
+
+    it('não publica quando a reserva é recusada', async () => {
+      const { useCase, publisher } = build([aResource({ active: false })]);
+
+      await expect(
+        useCase.execute({
+          resourceId: 'resource-1',
+          userId: 'user-1',
+          slotIds: ['slot-1'],
+        }),
+      ).rejects.toBeDefined();
+
+      expect(publisher.batches).toHaveLength(0);
     });
   });
 

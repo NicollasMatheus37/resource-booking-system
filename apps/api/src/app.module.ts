@@ -5,6 +5,7 @@ import { IdentityModule } from './modules/identity/identity.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { ResourcesModule } from './modules/resources/resources.module';
 import { HealthModule } from './shared/health/health.module';
+import { RealtimeModule } from './shared/realtime/realtime.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { HealthModule } from './shared/health/health.module';
     DatabaseModule,
     IdentityModule,
     HealthModule,
+    RealtimeModule,
     ResourcesModule,
     ReservationsModule,
   ],

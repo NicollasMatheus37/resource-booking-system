@@ -134,11 +134,32 @@ word-splitting, o que produziu um falso negativo na primeira verificação manua
 
 ---
 
-## Fatia 2 — Realtime
+## Fatia 2 — Realtime ✅ concluída em 03/09 às 19h02
 
-- Publisher de evento pós-commit e `@Sse('/events/availability')` (ADR 0005).
-- Heartbeat e `Last-Event-ID`.
-- Teste: reservar dispara evento com o delta correto.
+- [x] Port `AvailabilityPublisher` — o use-case publica sem conhecer o
+      transporte, e a publicação acontece só depois do commit.
+- [x] `@Sse('events/availability')` com `id` por evento e heartbeat de 25s.
+- [x] Testes de integração lendo o stream cru: formato do protocolo, delta
+      pós-commit, e ausência de evento quando a reserva é recusada.
+
+**Verificado na stack real** (`docker compose`), com `fetch` streaming:
+
+```
+event: availability
+id: 1
+data: {"type":"slot-availability-changed","slotId":"8238...","reservedUnits":4,"unitsPerSlot":100}
+```
+
+**Decisão registrada:** o endpoint SSE é **público**, por necessidade técnica —
+o `EventSource` do browser não permite headers customizados, então o
+`x-user-id` não chega. É aceitável porque o payload não tem dado de usuário:
+são contadores que o `GET /resources/:id/slots` já expõe. Se o stream um dia
+carregar dado por usuário, a autorização terá de vir por cookie ou query
+string.
+
+**Não implementado:** replay por `Last-Event-ID`. O `id` é emitido, mas não há
+buffer de eventos no servidor. Isso é coerente com o ADR 0005 — na reconexão o
+cliente refaz o snapshot, e o `GET` é a fonte da verdade.
 
 ---
 
