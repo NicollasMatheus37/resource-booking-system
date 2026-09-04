@@ -2,7 +2,9 @@
   "name": "@resource-booking/source",
   "version": "0.0.0",
   "license": "MIT",
-  "scripts": {},
+  "scripts": {
+    "proof:concurrency": "node tools/concurrency-proof.mjs"
+  },
   "private": true,
   "dependencies": {
     "@angular-devkit/build-angular": "22.1.6",

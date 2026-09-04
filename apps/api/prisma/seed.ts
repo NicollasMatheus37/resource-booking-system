@@ -70,6 +70,18 @@ const RESOURCES = [
     seats: null,
   },
   {
+    // Capacidade pequena de propósito: com 4 usuários no seed, é o único
+    // recurso compartilhado em que a disputa realmente atinge o teto — o que
+    // torna a prova de concorrência visível (tools/concurrency-proof.mjs).
+    name: 'Mesa de Coworking',
+    description: 'Mesas livres no andar 3, por ordem de chegada.',
+    kind: 'SHARED' as const,
+    unitsPerSlot: 6,
+    maxUnitsPerUser: 2,
+    maxSlotsPerReservation: 4,
+    seats: null,
+  },
+  {
     name: 'Ingresso VIP — Lote 1',
     description: 'Área VIP com acesso ao lounge.',
     kind: 'SHARED' as const,

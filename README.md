@@ -70,7 +70,13 @@ pnpm exec nx serve web            # http://localhost:4200
 ```bash
 pnpm exec nx run-many -t lint test build   # unitários — sem Docker, milissegundos
 pnpm exec nx test-integration api          # integração + concorrência (requer Docker)
+pnpm run proof:concurrency                 # prova ao vivo, contra a stack em pé
 ```
+
+O último não é um teste: é uma **demonstração**. Dispara 200 requisições
+simultâneas contra a stack rodando e mostra a evidência que um teste esconde —
+a janela de disparo e o pico de requisições em voo ao mesmo tempo. Saída
+comentada em [`docs/concurrency.md`](docs/concurrency.md).
 
 | Suíte | Testes | O que cobre |
 |---|---|---|

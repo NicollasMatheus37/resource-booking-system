@@ -99,6 +99,72 @@ O segundo caso merece atenção: a constraint tem chave `resource_id`, não
 diferentes do mesmo recurso — o que aconteceria se a agenda fosse regerada com
 outra duração de slot.
 
+## Prova ao vivo, contra a stack em pé
+
+Os testes acima rodam em CI e sobem o próprio banco. Para **demonstrar** —
+numa apresentação, ou depois de um deploy — há um script que roda contra a
+stack já no ar e mostra a evidência temporal que um teste automatizado esconde:
+
+```bash
+docker compose up -d
+docker compose run --rm --build seed
+pnpm run proof:concurrency            # ou --requests=500
+```
+
+### Por que "no mesmo segundo" é uma barra fraca
+
+Mil requisições espalhadas ao longo de um segundo podem nunca se cruzar. O que
+cria contenção é **sobreposição**, e é isso que o script mede: a janela em que
+as requisições foram disparadas e o pico de quantas estavam em voo ao mesmo
+tempo.
+
+### Saída típica
+
+```
+  1. EXCLUSIVE — 200 pedidos para o MESMO horário
+     recurso: Sala Azul · garantia: EXCLUDE USING gist
+    200 requisições disparadas em 28.2ms · pico de 200 em voo · tudo resolvido em 588ms
+    ✓ exatamente 1 reserva confirmada  (1)
+    ✓ nenhum erro técnico  (0 × 5xx)
+    ✓ todos os perdedores receberam 409  (199)
+    ✓ contador do horário ficou em 1  (1/1)
+    códigos devolvidos: SLOT_UNAVAILABLE=150 · ALREADY_RESERVED=49
+
+  2. SHARED — 200 pedidos de 2 unidades num horário de 6
+     4 usuários distintos pedindo 8 unidades no total — não cabe
+    200 requisições disparadas em 13.0ms · pico de 200 em voo · tudo resolvido em 430ms
+    ✓ contador nunca passou da capacidade  (6/6)
+    ✓ contador bate exatamente com o que foi cobrado  (contador=6 soma=6)
+    ✓ pedidos que não cabiam foram recusados  (50 × SLOT_UNAVAILABLE)
+
+  3. CANCELAMENTO concorrente — o caminho inverso
+    50 requisições disparadas em 1.7ms · pico de 50 em voo · tudo resolvido em 66ms
+    ✓ exatamente 1 cancelamento teve efeito  (1 de 50)
+    ✓ unidades devolvidas uma única vez  (contador=0)
+```
+
+**Pico de 200 em voo** é o número que importa: as 200 requisições estavam
+simultaneamente abertas quando a primeira ainda não havia respondido. Elas se
+empilham no Postgres ao mesmo tempo — que é exatamente a condição que o
+ADR 0004 precisa enfrentar.
+
+### O que cada cenário revela além do óbvio
+
+**Cenário 1 — os dois `409` aparecem juntos.** Dos 199 perdedores, ~150 recebem
+`SLOT_UNAVAILABLE` e ~49 recebem `ALREADY_RESERVED`: estas últimas são as
+repetições do próprio vencedor, já que o seed tem 4 usuários e as requisições
+circulam entre eles. É a distinção que o frontend precisa fazer (ADR 0006),
+visível sem preparar nada.
+
+**Cenário 2 — a condição está escrita corretamente.** Quatro usuários pedindo 2
+unidades cada somam 8 num horário de 6. Três passam, o quarto é recusado **por
+lotação**. Um `reserved_units < units_per_slot` ingênuo deixaria o quarto passar
+quando restasse 1 unidade — a condição real é `+ qty <=`.
+
+**Cenário 3 — o contador não vai a negativo.** Cinquenta cancelamentos
+simultâneos da mesma reserva de 2 unidades: sem o portão atômico devolveriam
+100 unidades e o contador iria a −98.
+
 ## Prova com múltiplas réplicas
 
 Os testes acima rodam contra um único processo. A afirmação central do
