@@ -60,14 +60,67 @@ antes de ser testada**. Rodar o comando revelou que era falsa, e a correção
 gerou tanto o override de compose quanto uma prova nova — a invariante
 mantendo-se entre processos distintos, que é a evidência mais forte do ADR 0004.
 
+---
+
+## Rodada de validação manual — 2026-09-04, 08h55–11h
+
+As sete fatias fecharam em 03/09. A validação manual pelos olhos do
+desenvolvedor rodou no dia seguinte, e **produziu mais correções de
+comportamento que qualquer fatia individual** — vale registrar por quê.
+
+Os seis passos do roteiro passaram. O que os cercou, não.
+
+| # | Achado | Como apareceu | Natureza |
+|---|---|---|---|
+| 1 | Imagem do `seed` defasada: ainda gerava horários no passado | Conferindo os dados antes de entregar o roteiro | `docker compose build` ignora serviços com `profiles` |
+| 2 | Build travava resolvendo a diretiva `# syntax=` | Tentando reconstruir o `seed` | Credential helper do Docker Desktop quebrado no WSL |
+| 3 | **Jornada em UTC**: horário comercial das 05:00 às 15:00 | Nas capturas de tela do desenvolvedor | Bug de domínio |
+| 4 | Reserva não-contígua exibida como "4 horários", sem dizer quais | Nas mesmas capturas | Modelagem: reserva agrupava slots sem relação |
+| 5 | Faixa de aviso empurrava a grade a cada reserva | Uso repetido da tela | Decisão de apresentação |
+| 6 | "2 horários reservado(s)" — e o mesmo em 4 outros lugares | Apontado no toast, encontrado nos demais | Concordância |
+| 7 | Labels ao lado dos inputs no formulário | Captura do modal | `form-control` é classe do DaisyUI 4, removida na v5 |
+| 8 | `input-bordered` e `select-bordered` também eram no-op | Investigando a causa do #7 | Classes mortas silenciosas |
+| 9 | "Informe um nome" num formulário recém-aberto | Visível na captura do #7 | Validação prematura |
+
+### O que isso ensina
+
+**Achados 3, 4, 5, 7 e 9 eram invisíveis para a suíte de testes** — e não por
+descuido na cobertura. Um teste verifica o que você pensou em afirmar; nenhum
+deles afirmava "a jornada começa às 8h no relógio do usuário" ou "o label fica
+acima do campo", porque essas coisas não pareciam poder dar errado.
+
+Os achados 7 e 8 têm a mesma raiz e merecem destaque: **classes de CSS
+removidas não geram erro**. `form-control` virou um no-op quando o DaisyUI
+subiu de major, e o layout simplesmente mudou. A correção incluiu uma
+verificação mecânica — extrair as classes usadas nos templates e conferir que
+cada uma tem regra no CSS gerado — que transformou "eu olhei e parecia certo"
+em algo repetível.
+
+O achado 2 é ambiental, não do projeto, mas a resposta foi de projeto: remover
+a diretiva `# syntax=` eliminou uma dependência de rede no build de quem for
+avaliar.
+
+### Mudanças de domínio que a validação forçou
+
+Duas, ambas registradas como revisão nos ADRs em vez de reescrita silenciosa:
+
+- **ADR 0011** — uma reserva passou a cobrir sempre um bloco **contíguo**;
+  seleção com lacunas produz reservas independentes. A atomicidade deixou de
+  valer sobre a seleção e passou a valer por bloco, o que mudou o contrato da
+  API para admitir resultado parcial (`207`).
+- **ADR 0003** — a jornada passou a ser horário de parede no fuso de operação,
+  configurável, com o custo de renderizar no fuso do visitante declarado.
+
 ### Estado final
 
 | Suíte | Testes |
 |---|---|
-| Unitários da API (sem Docker) | 32 |
-| Integração com Postgres real | 24 |
-| Frontend | 35 |
-| Violações de acessibilidade (axe, WCAG 2.1 AA) | 0 |
+| Unitários da API (sem Docker) | 45 |
+| Integração com Postgres real | 31 |
+| Frontend | 42 |
+| Violações de acessibilidade (axe, WCAG 2.1 AA, 5 estados) | 0 |
+
+Validação manual: **concluída com sucesso** em 2026-09-04.
 
 ---
 
