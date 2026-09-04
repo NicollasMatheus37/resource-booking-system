@@ -15,8 +15,8 @@ Pré-requisito: Docker com Compose.
 
 ```bash
 cp .env.example .env
-docker compose up --build          # sobe banco, migra e serve API + frontend
-docker compose run --rm seed       # popula recursos, horários e usuários
+docker compose up --build              # sobe banco, migra e serve API + frontend
+docker compose run --rm --build seed   # popula recursos, horários e usuários
 ```
 
 | Serviço | URL |
@@ -29,6 +29,11 @@ docker compose run --rm seed       # popula recursos, horários e usuários
 O compose sobe cinco serviços: `postgres`, `migrate` (aplica as migrations e
 sai), `api`, `web` e `seed` (sob demanda). A API só inicia depois que a
 migration termina com sucesso.
+
+> O `--build` no `seed` não é decorativo: o serviço fica atrás de
+> `profiles: ['tools']` para não rodar sozinho no `up`, e `docker compose build`
+> **ignora serviços com profile**. Sem o `--build`, um `run` posterior pode
+> reaproveitar uma imagem defasada.
 
 ### Para ver a disputa acontecendo
 

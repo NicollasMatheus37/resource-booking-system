@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # 12-Factor V — build, release, run como estágios separados.
 FROM node:26-alpine AS builder
 WORKDIR /app
