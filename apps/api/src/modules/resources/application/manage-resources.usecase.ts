@@ -48,6 +48,9 @@ export class ManageResourcesUseCase {
       const janelas = generateSchedule(new Date(), {
         slotMinutes: this.env.SLOT_DURATION_MINUTES,
         horizonDays: this.env.SCHEDULE_HORIZON_DAYS,
+        timeZone: this.env.SCHEDULE_TIMEZONE,
+        dayStartHour: this.env.SCHEDULE_DAY_START_HOUR,
+        dayEndHour: this.env.SCHEDULE_DAY_END_HOUR,
       });
 
       await tx.slot.createMany({

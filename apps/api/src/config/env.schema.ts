@@ -48,6 +48,28 @@ export const envSchema = z.object({
   /** Janela de slot e horizonte de geração da agenda (ADR 0003). */
   SLOT_DURATION_MINUTES: z.coerce.number().int().positive().default(30),
   SCHEDULE_HORIZON_DAYS: z.coerce.number().int().positive().default(7),
+
+  /**
+   * Fuso de OPERAÇÃO dos recursos. A jornada é horário de parede local: uma
+   * sala funciona das 8h às 18h no relógio de quem a usa, não em UTC.
+   */
+  SCHEDULE_TIMEZONE: z
+    .string()
+    .default('America/Sao_Paulo')
+    .refine(
+      (tz) => {
+        try {
+          new Intl.DateTimeFormat('en-US', { timeZone: tz });
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'fuso IANA inválido (ex.: America/Sao_Paulo)' },
+    ),
+
+  SCHEDULE_DAY_START_HOUR: z.coerce.number().int().min(0).max(23).default(8),
+  SCHEDULE_DAY_END_HOUR: z.coerce.number().int().min(1).max(24).default(18),
 });
 
 export type Env = z.infer<typeof envSchema>;

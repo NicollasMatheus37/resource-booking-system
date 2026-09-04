@@ -20,11 +20,18 @@ Este ADR desfaz essa ambiguidade.
 Um **slot** é uma janela de tempo fixa de **um** recurso, **pré-gerada** pelo
 sistema. O usuário não informa horário: ele escolhe um slot que já existe.
 
-**Janela: 30 minutos. Horizonte: 7 dias à frente.** Trinta minutos é o menor
-grão útil para salas e permite reservas de 2h em 4 slots (ADR 0011). Sete dias
-dão volume suficiente para a grade parecer um sistema real sem inchar o banco de
-testes — com 5 recursos, são ~1.400 slots, o que carrega instantaneamente e
-mantém os testes de integração rápidos.
+**Janela: 30 minutos. Horizonte: 7 dias. Jornada 08:00–18:00 no fuso de
+operação** (`SCHEDULE_TIMEZONE`, padrão `America/Sao_Paulo`).
+
+Trinta minutos é o menor grão útil para salas e permite reservas de 2h em 4
+slots (ADR 0011). Sete dias dão volume para a grade parecer um sistema real sem
+inchar o banco de testes — com 5 recursos, algumas centenas de slots, que
+carregam instantaneamente.
+
+A jornada é **horário de parede local**: uma sala funciona das 8h às 18h no
+relógio de quem a usa, não em UTC. Gerar `08:00–18:00 UTC` fazia a grade
+aparecer das 05:00 às 15:00 no Brasil — horário comercial começando de
+madrugada. Foi um bug real, encontrado na validação manual.
 
 | id | resource | startsAt | endsAt |
 |---|---|---|---|
@@ -84,7 +91,7 @@ Reservation {
 }
 
 ReservationSlot {
-  reservationId, slotId          // 1..N — uma reserva agrupa vários slots (ADR 0011)
+  reservationId, slotId          // 1..N slots CONTÍGUOS (ADR 0011)
 }
 ```
 
@@ -114,8 +121,9 @@ vez). Regras:
 | 3 | Um usuário tem no máximo uma reserva `CONFIRMED` por slot | `UNIQUE (slot_id, user_id) WHERE status = 'CONFIRMED'` sobre `ReservationSlot` |
 | 4 | `quantity` respeita `maxUnitsPerUser` e vale 1 em `EXCLUSIVE` | regra de domínio + `CHECK` |
 | 5 | Não se reserva slot no passado nem recurso inativo | regra de domínio no use-case |
-| 6 | Uma reserva não excede `maxSlotsPerReservation` | regra de domínio no use-case (ADR 0011) |
+| 6 | Uma reserva não excede `maxSlotsPerReservation` | regra de domínio no use-case, aplicada **por bloco** (ADR 0011) |
 | 7 | Todos os slots de uma reserva pertencem ao mesmo recurso | regra de domínio + FK |
+| 8 | Os slots de uma reserva são **contíguos** | agrupamento no domínio (ADR 0011, revisão) |
 
 As invariantes 1 a 4 vivem no banco porque a API é stateless e replicável
 (ADR 0010): verificação em memória de processo é falsa por construção. A 5 é
@@ -145,6 +153,10 @@ o teste de concorrência com identidades distintas.
 
 ## Consequências
 
+- **Custo:** a grade é renderizada no fuso do **visitante**, não no fuso de
+  operação. Quem abrir o dashboard de outro país vê os horários da sala
+  convertidos para o próprio relógio. Para um recurso físico, mostrar o fuso de
+  operação com rótulo explícito seria mais claro — anotado como melhoria.
 - **Custo:** é preciso um gerador de slots, e o horizonte de 7 dias é fixo no
   MVP — não há job que estenda a janela conforme os dias passam, então após uma
   semana a grade esvazia. Dívida conhecida e declarada: em produção seria um

@@ -96,7 +96,7 @@ describe('Guard de identidade', () => {
 
     expect(resposta.status).toBe(201);
     // A reserva é de quem enviou o header, não de quem o corpo indicava.
-    expect(resposta.body.userId).toBe(ana.id);
+    expect(resposta.body.created[0].userId).toBe(ana.id);
 
     const doBruno = await request(baseUrl)
       .get('/api/reservations')

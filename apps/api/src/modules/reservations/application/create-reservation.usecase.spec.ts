@@ -52,8 +52,10 @@ describe('CreateReservationUseCase', () => {
         slotIds: ['slot-1'],
       });
 
-      expect(result.slotIds).toEqual(['slot-1']);
-      expect(result.quantity).toBe(1);
+      expect(result.created).toHaveLength(1);
+      expect(result.created[0].slotIds).toEqual(['slot-1']);
+      expect(result.created[0].quantity).toBe(1);
+      expect(result.rejected).toEqual([]);
     });
 
     it('reserva 4 slots em sequência — as 2h do ADR 0011', async () => {
@@ -65,10 +67,12 @@ describe('CreateReservationUseCase', () => {
         slotIds: ['slot-1', 'slot-2', 'slot-3', 'slot-4'],
       });
 
-      expect(result.slotIds).toHaveLength(4);
+      // Contíguos: UMA reserva com os quatro horários.
+      expect(result.created).toHaveLength(1);
+      expect(result.created[0].slotIds).toHaveLength(4);
     });
 
-    it('aceita seleção não-contígua', async () => {
+    it('seleção não-contígua produz UMA RESERVA POR BLOCO (ADR 0011)', async () => {
       const { useCase } = build();
 
       const result = await useCase.execute({
@@ -77,7 +81,25 @@ describe('CreateReservationUseCase', () => {
         slotIds: ['slot-1', 'slot-4'],
       });
 
-      expect(result.slotIds).toEqual(['slot-1', 'slot-4']);
+      // Duas reservas independentes, cada uma cancelável sozinha.
+      expect(result.created).toHaveLength(2);
+      expect(result.created[0].slotIds).toEqual(['slot-1']);
+      expect(result.created[1].slotIds).toEqual(['slot-4']);
+      expect(result.rejected).toEqual([]);
+    });
+
+    it('agrupa blocos mistos: dois contíguos + um avulso', async () => {
+      const { useCase } = build();
+
+      const result = await useCase.execute({
+        resourceId: 'resource-1',
+        userId: 'user-1',
+        slotIds: ['slot-1', 'slot-2', 'slot-4'],
+      });
+
+      expect(result.created).toHaveLength(2);
+      expect(result.created[0].slotIds).toEqual(['slot-1', 'slot-2']);
+      expect(result.created[1].slotIds).toEqual(['slot-4']);
     });
   });
 
@@ -173,19 +195,20 @@ describe('CreateReservationUseCase', () => {
       ).rejects.toMatchObject({ code: 'SLOT_NOT_FOUND' });
     });
 
-    it('recusa slot no passado', async () => {
+    it('rejeita o bloco com slot no passado', async () => {
       const passado = slotSequence(1, {
         start: new Date('2026-09-05T07:00:00.000Z'),
       });
       const { useCase } = build([aResource()], passado);
 
-      await expect(
-        useCase.execute({
-          resourceId: 'resource-1',
-          userId: 'user-1',
-          slotIds: ['slot-1'],
-        }),
-      ).rejects.toMatchObject({ code: 'SLOT_IN_PAST' });
+      const result = await useCase.execute({
+        resourceId: 'resource-1',
+        userId: 'user-1',
+        slotIds: ['slot-1'],
+      });
+
+      expect(result.created).toEqual([]);
+      expect(result.rejected[0].code).toBe('SLOT_IN_PAST');
     });
 
     it('recusa slot de outro recurso na mesma reserva', async () => {
@@ -207,19 +230,45 @@ describe('CreateReservationUseCase', () => {
       ).rejects.toMatchObject({ code: 'INVALID_SELECTION' });
     });
 
-    it('recusa mais slots que maxSlotsPerReservation', async () => {
+    it('rejeita o BLOCO que excede maxSlotsPerReservation', async () => {
       const { useCase } = build(
         [aResource({ maxSlotsPerReservation: 2 })],
         slotSequence(4),
       );
 
-      await expect(
-        useCase.execute({
-          resourceId: 'resource-1',
-          userId: 'user-1',
-          slotIds: ['slot-1', 'slot-2', 'slot-3'],
-        }),
-      ).rejects.toMatchObject({ code: 'TOO_MANY_SLOTS' });
+      const result = await useCase.execute({
+        resourceId: 'resource-1',
+        userId: 'user-1',
+        slotIds: ['slot-1', 'slot-2', 'slot-3'],
+      });
+
+      // O limite vale por reserva, e cada bloco é uma reserva.
+      expect(result.created).toEqual([]);
+      expect(result.rejected).toHaveLength(1);
+      expect(result.rejected[0].code).toBe('TOO_MANY_SLOTS');
+    });
+
+    it('um bloco inválido não derruba os outros', async () => {
+      const { useCase } = build(
+        [aResource({ maxSlotsPerReservation: 2 })],
+        slotSequence(6),
+      );
+
+      const result = await useCase.execute({
+        resourceId: 'resource-1',
+        userId: 'user-1',
+        // Bloco A tem 3 slots (excede); bloco B tem 1 (cabe).
+        slotIds: ['slot-1', 'slot-2', 'slot-3', 'slot-6'],
+      });
+
+      expect(result.created).toHaveLength(1);
+      expect(result.created[0].slotIds).toEqual(['slot-6']);
+      expect(result.rejected).toHaveLength(1);
+      expect(result.rejected[0].slotIds).toEqual([
+        'slot-1',
+        'slot-2',
+        'slot-3',
+      ]);
     });
   });
 
@@ -250,7 +299,7 @@ describe('CreateReservationUseCase', () => {
         quantity: 4,
       });
 
-      expect(result.quantity).toBe(4);
+      expect(result.created[0].quantity).toBe(4);
     });
 
     it('recusa quantidade acima de maxUnitsPerUser', async () => {
@@ -347,7 +396,7 @@ describe('CreateReservationUseCase', () => {
         idempotencyKey: 'chave-1',
       });
 
-      expect(second.id).toBe(first.id);
+      expect(second.created[0].id).toBe(first.created[0].id);
       expect(repo.confirmed).toHaveLength(1);
     });
   });

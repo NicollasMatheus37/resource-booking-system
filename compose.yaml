@@ -47,6 +47,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-booking}:${POSTGRES_PASSWORD:-booking}@postgres:5432/${POSTGRES_DB:-booking}
       SLOT_DURATION_MINUTES: ${SLOT_DURATION_MINUTES:-30}
       SCHEDULE_HORIZON_DAYS: ${SCHEDULE_HORIZON_DAYS:-7}
+      SCHEDULE_TIMEZONE: ${SCHEDULE_TIMEZONE:-America/Sao_Paulo}
+      SCHEDULE_DAY_START_HOUR: ${SCHEDULE_DAY_START_HOUR:-8}
+      SCHEDULE_DAY_END_HOUR: ${SCHEDULE_DAY_END_HOUR:-18}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -68,6 +71,9 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
       SLOT_DURATION_MINUTES: ${SLOT_DURATION_MINUTES:-30}
       SCHEDULE_HORIZON_DAYS: ${SCHEDULE_HORIZON_DAYS:-7}
+      SCHEDULE_TIMEZONE: ${SCHEDULE_TIMEZONE:-America/Sao_Paulo}
+      SCHEDULE_DAY_START_HOUR: ${SCHEDULE_DAY_START_HOUR:-8}
+      SCHEDULE_DAY_END_HOUR: ${SCHEDULE_DAY_END_HOUR:-18}
     ports:
       - '3000:3000'
     depends_on:

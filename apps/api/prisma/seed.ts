@@ -21,6 +21,9 @@ const prisma = new PrismaClient({
 
 const SLOT_MINUTES = Number(process.env.SLOT_DURATION_MINUTES ?? 30);
 const HORIZON_DAYS = Number(process.env.SCHEDULE_HORIZON_DAYS ?? 7);
+const TIMEZONE = process.env.SCHEDULE_TIMEZONE ?? 'America/Sao_Paulo';
+const DAY_START = Number(process.env.SCHEDULE_DAY_START_HOUR ?? 8);
+const DAY_END = Number(process.env.SCHEDULE_DAY_END_HOUR ?? 18);
 
 const USERS = [
   { name: 'Ana Souza', email: 'ana@exemplo.com' },
@@ -92,6 +95,9 @@ async function main(): Promise<void> {
   const grid = generateSchedule(new Date(), {
     slotMinutes: SLOT_MINUTES,
     horizonDays: HORIZON_DAYS,
+    timeZone: TIMEZONE,
+    dayStartHour: DAY_START,
+    dayEndHour: DAY_END,
   });
 
   for (const resource of RESOURCES) {
@@ -115,7 +121,7 @@ async function main(): Promise<void> {
 
   console.log(
     `Seed concluído: ${users} usuários, ${resources} recursos, ${slots} slots ` +
-      `(${SLOT_MINUTES}min, ${HORIZON_DAYS} dias).`,
+      `(${SLOT_MINUTES}min, ${HORIZON_DAYS} dias, ${TIMEZONE}).`,
   );
 }
 

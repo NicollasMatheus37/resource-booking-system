@@ -1,5 +1,9 @@
 import type { SlotDto } from '@resource-booking/contracts';
-import type { DashboardAction, DashboardState } from './dashboard.state';
+import type {
+  DashboardAction,
+  DashboardState,
+  Notice,
+} from './dashboard.state';
 
 /**
  * Reducer puro do dashboard.
@@ -97,20 +101,62 @@ export function dashboardReducer(
     case 'submit-started':
       return { ...state, submitting: true, notice: null };
 
-    case 'submit-succeeded':
+    case 'submit-settled': {
+      // Uma seleção com lacunas produz várias reservas independentes, e o
+      // resultado pode ser PARCIAL (ADR 0011). A tela precisa dizer o que
+      // passou E o que não passou, na mesma frase.
+      const { createdBlocks, createdSlots, rejected } = action;
+
+      if (createdBlocks === 0) {
+        return {
+          ...state,
+          submitting: false,
+          // Seleção preservada: o usuário pode ajustar e tentar de novo.
+          notice: {
+            tone: rejected.every((r) => r.code === 'ALREADY_RESERVED')
+              ? 'info'
+              : 'error',
+            message:
+              rejected[0]?.message ?? 'Não foi possível reservar.',
+            code: rejected[0]?.code as Notice['code'],
+          },
+        };
+      }
+
+      const horarios =
+        createdSlots === 1 ? '1 horário' : `${createdSlots} horários`;
+      const reservas =
+        createdBlocks === 1 ? '1 reserva' : `${createdBlocks} reservas`;
+      const base =
+        createdBlocks === 1
+          ? `${horarios} reservado(s).`
+          : `${horarios} reservados em ${reservas}.`;
+
+      if (rejected.length === 0) {
+        return {
+          ...state,
+          submitting: false,
+          selection: [],
+          quantity: 1,
+          notice: { tone: 'success', message: base },
+        };
+      }
+
+      const perdidos = rejected.reduce((n, r) => n + r.slotIds.length, 0);
       return {
         ...state,
         submitting: false,
-        selection: [],
-        quantity: 1,
+        // Só o que foi reservado sai da seleção; o que falhou permanece
+        // marcado para o usuário decidir.
+        selection: state.selection.filter((id) =>
+          rejected.some((r) => r.slotIds.includes(id)),
+        ),
         notice: {
-          tone: 'success',
-          message:
-            action.slotIds.length === 1
-              ? 'Horário reservado.'
-              : `${action.slotIds.length} horários reservados.`,
+          tone: 'warning',
+          message: `${base} Outro(s) ${perdidos} não estavam mais disponíveis.`,
         },
       };
+    }
 
     case 'submit-failed':
       return {

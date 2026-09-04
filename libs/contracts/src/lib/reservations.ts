@@ -1,9 +1,30 @@
 export interface CreateReservationRequest {
   readonly resourceId: string;
-  /** Não precisa ser contíguo (ADR 0011). Ordem é irrelevante para o cliente. */
+  /**
+   * Pode conter lacunas. O servidor agrupa em blocos contíguos e cria UMA
+   * reserva por bloco, cada uma independente (ADR 0011). Ordem é irrelevante.
+   */
   readonly slotIds: readonly string[];
   /** Unidades por slot. Omitido equivale a 1. Sempre 1 em EXCLUSIVE. */
   readonly quantity?: number;
+}
+
+export interface RejectedBlock {
+  readonly slotIds: readonly string[];
+  readonly code: string;
+  readonly message: string;
+}
+
+/**
+ * Resultado de um pedido de reserva.
+ *
+ * Uma seleção com lacunas produz vários blocos, e cada bloco é atômico por si
+ * — então o resultado pode ser parcial. O status HTTP reflete isso: `201`
+ * quando tudo passou, `207` quando parte passou, `409` quando nada passou.
+ */
+export interface CreateReservationResponse {
+  readonly created: readonly ReservationDto[];
+  readonly rejected: readonly RejectedBlock[];
 }
 
 export type ReservationStatus = 'CONFIRMED' | 'CANCELLED';

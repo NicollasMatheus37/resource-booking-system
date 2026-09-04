@@ -149,13 +149,18 @@ describe('DashboardStore', () => {
       expect(pedidos).toHaveLength(1);
 
       pedidos[0].flush({
-        id: 'res-1',
-        resourceId: 'r1',
-        userId: 'user-1',
-        quantity: 1,
-        status: 'CONFIRMED',
-        slotIds: ['s1'],
-        createdAt: '2026-09-04T00:00:00.000Z',
+        created: [
+          {
+            id: 'res-1',
+            resourceId: 'r1',
+            userId: 'user-1',
+            quantity: 1,
+            status: 'CONFIRMED',
+            slotIds: ['s1'],
+            createdAt: '2026-09-04T00:00:00.000Z',
+          },
+        ],
+        rejected: [],
       });
 
       http.expectOne(`${API}/resources/r1/slots`).flush([
@@ -168,22 +173,79 @@ describe('DashboardStore', () => {
       expect(store.myReservations()).toHaveLength(1);
     });
 
-    it('409 SLOT_UNAVAILABLE reconcilia a grade', async () => {
+    it('409 traz o MESMO contrato pelo canal de erro e reconcilia', async () => {
       await carregar();
       store.toggleSlot('s1');
       store.submit();
 
+      // O Angular manda 409 pelo canal de erro, mas o corpo é o contrato de
+      // resultado com `created` vazio.
       http.expectOne(`${API}/reservations`).flush(
-        { code: 'SLOT_UNAVAILABLE', message: 'Este horário já foi reservado.' },
+        {
+          created: [],
+          rejected: [
+            {
+              slotIds: ['s1'],
+              code: 'SLOT_UNAVAILABLE',
+              message: 'Este horário já foi reservado.',
+            },
+          ],
+        },
         { status: 409, statusText: 'Conflict' },
       );
 
       http.expectOne(`${API}/resources/r1/slots`).flush([
         slot('s1', { reservedUnits: 1, availableUnits: 0 }),
       ]);
+      http.expectOne(`${API}/reservations`).flush([]);
 
       expect(store.notice()?.code).toBe('SLOT_UNAVAILABLE');
       expect(store.submitting()).toBe(false);
+      // Seleção preservada para o usuário ajustar.
+      expect(store.selection()).toEqual(['s1']);
+    });
+
+    it('207 parcial: mantém na seleção apenas o bloco recusado', async () => {
+      await carregar([slot('s1'), slot('s2'), slot('s3')]);
+      store.toggleSlot('s1');
+      store.toggleSlot('s3');
+      store.submit();
+
+      http.expectOne(`${API}/reservations`).flush(
+        {
+          created: [
+            {
+              id: 'res-1',
+              resourceId: 'r1',
+              userId: 'user-1',
+              quantity: 1,
+              status: 'CONFIRMED',
+              slotIds: ['s1'],
+              createdAt: '2026-09-04T00:00:00.000Z',
+            },
+          ],
+          rejected: [
+            {
+              slotIds: ['s3'],
+              code: 'SLOT_UNAVAILABLE',
+              message: 'Este horário já foi reservado.',
+            },
+          ],
+        },
+        { status: 207, statusText: 'Multi-Status' },
+      );
+
+      // O refetch devolve a grade inteira: s3 continua existindo, agora
+      // ocupado por outra pessoa.
+      http.expectOne(`${API}/resources/r1/slots`).flush([
+        slot('s1', { reservedUnits: 1, availableUnits: 0, reservedByMe: true }),
+        slot('s2'),
+        slot('s3', { reservedUnits: 1, availableUnits: 0 }),
+      ]);
+      http.expectOne(`${API}/reservations`).flush([]);
+
+      expect(store.notice()?.tone).toBe('warning');
+      expect(store.selection()).toEqual(['s3']);
     });
 
     it('falha de rede NÃO altera o estado local nem refaz fetch', async () => {
@@ -274,10 +336,20 @@ describe('DashboardStore', () => {
       expect(store.canSubmit()).toBe(false);
 
       pedido.flush(
-        { code: 'SLOT_UNAVAILABLE', message: 'Este horário já foi reservado.' },
+        {
+          created: [],
+          rejected: [
+            {
+              slotIds: ['s2'],
+              code: 'SLOT_UNAVAILABLE',
+              message: 'Este horário já foi reservado.',
+            },
+          ],
+        },
         { status: 409, statusText: 'Conflict' },
       );
       http.expectOne(`${API}/resources/r1/slots`).flush([slot('s1')]);
+      http.expectOne(`${API}/reservations`).flush([]);
     });
   });
 });

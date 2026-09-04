@@ -4,7 +4,7 @@ import type {
   CreateResourceRequest,
   UpdateResourceRequest,
   CreateReservationRequest,
-  ReservationDto,
+  CreateReservationResponse,
   ReservationSummaryDto,
   ResourceDto,
   SlotDto,
@@ -42,12 +42,25 @@ export class ResourcesApi {
     );
   }
 
-  reserve(body: CreateReservationRequest): Observable<ReservationDto> {
-    return this.http.post<ReservationDto>(`${this.base}/reservations`, body, {
-      // Defesa em profundidade contra retry de rede — a UI já impede o clique
-      // duplo desabilitando o botão (ADR 0004).
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    });
+  /**
+   * Cria as reservas de uma seleção.
+   *
+   * O `201` e o `207` (parcial) chegam pelo caminho normal. O `409` — nada
+   * criado — chega pelo canal de erro do Angular, mas o corpo é o MESMO
+   * contrato; quem desembrulha isso é o store (ADR 0006).
+   */
+  reserve(
+    body: CreateReservationRequest,
+  ): Observable<CreateReservationResponse> {
+    return this.http.post<CreateReservationResponse>(
+      `${this.base}/reservations`,
+      body,
+      {
+        // Defesa em profundidade contra retry de rede — a UI já impede o
+        // clique duplo desabilitando o botão (ADR 0004).
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      },
+    );
   }
 
   listMyReservations(): Observable<ReservationSummaryDto[]> {

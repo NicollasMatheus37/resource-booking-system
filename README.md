@@ -41,6 +41,17 @@ Abra **duas abas** e escolha usuários diferentes na tela inicial. Selecione o
 mesmo horário nas duas e confirme em uma: a outra aba atualiza sozinha e
 bloqueia o envio.
 
+### Reserva de vários horários
+
+Marcar horários **seguidos** cria uma reserva só — uma reunião de 2h são 4
+slots de 30min. Marcar horários **com lacuna** (09:30 e 13:00) cria reservas
+**independentes**, uma por bloco contíguo, cada uma cancelável sozinha
+([ADR 0011](docs/adr/0011-reserva-multiplos-slots.md)).
+
+Como blocos são independentes, o resultado pode ser parcial: `201` quando tudo
+foi criado, `207` quando parte foi, `409` quando nada foi. O corpo é o mesmo
+contrato nos três casos.
+
 ### Desenvolvimento local
 
 Requer Node 26 e pnpm 11.
@@ -63,9 +74,9 @@ pnpm exec nx test-integration api          # integração + concorrência (reque
 
 | Suíte | Testes | O que cobre |
 |---|---|---|
-| Unitários da API | 32 | Regras de domínio com repositórios falsos |
-| Integração | 24 | Garantias do Postgres, contra banco real via Testcontainers |
-| Frontend | 35 | Reducer puro, store com HTTP e SSE falsos, guard, interceptor |
+| Unitários da API | 45 | Regras de domínio com repositórios falsos, agrupamento em blocos, geração de agenda com fuso |
+| Integração | 31 | Garantias do Postgres, contra banco real via Testcontainers |
+| Frontend | 38 | Reducer puro, store com HTTP e SSE falsos, guard, interceptor |
 
 ---
 
@@ -208,6 +219,11 @@ que estava vendo.
 
 ![Conflito ao vivo](docs/img/dashboard-conflito-ao-vivo.png)
 
+Uma seleção com lacunas resulta em reservas separadas, uma por bloco contíguo,
+cada uma com seu próprio card e seu próprio cancelamento:
+
+![Minhas reservas](docs/img/dashboard-minhas-reservas.png)
+
 ---
 
 ## Decisões arquiteturais e trade-offs
@@ -252,7 +268,7 @@ com contexto, alternativas recusadas e o preço pago:
 
 | Fator | Onde |
 |---|---|
-| III — Config | Schema `zod` validado no **boot**; sem `process.env` espalhado; sem default para segredo. O frontend recebe config em **runtime** (`env.js`), então a mesma imagem roda em qualquer ambiente |
+| III — Config | Schema `zod` validado no **boot**; sem `process.env` espalhado; sem default para segredo. Fuso e jornada dos recursos também vêm do ambiente. O frontend recebe config em **runtime** (`env.js`), então a mesma imagem roda em qualquer ambiente |
 | IV — Backing services | Postgres alcançado só por `DATABASE_URL`; atrás de ports no código |
 | V — Build/release/run | Dockerfiles multi-stage; migrations são serviço separado no compose, nunca no start da API |
 | VI — Processos | Nada em memória entre requisições; por isso a concorrência vive no banco |
@@ -306,6 +322,13 @@ Redis e fila estão documentados como escada, não como código.
 **Horizonte de agenda fixo em 7 dias.** Não há job estendendo a janela conforme
 os dias passam; após uma semana sem seed a grade esvazia. Em produção seria um
 processo administrativo diário.
+
+**A grade é renderizada no fuso do visitante**, não no fuso de operação. A
+jornada é gerada corretamente em horário local do recurso
+(`SCHEDULE_TIMEZONE`), mas quem abrir o dashboard de outro país vê os horários
+convertidos para o próprio relógio — uma sala das 8h às 18h em São Paulo
+aparece das 12h às 22h em Lisboa. Para um recurso físico, mostrar o fuso de
+operação com rótulo explícito seria mais claro.
 
 **`kind` e `unitsPerSlot` são imutáveis** após criar o recurso. Reduzir a
 capacidade com reservas confirmadas produziria overbooking por edição de

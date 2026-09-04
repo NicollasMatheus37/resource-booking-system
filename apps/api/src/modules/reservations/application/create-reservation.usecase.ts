@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  DomainError,
   InvalidQuantityError,
   InvalidSelectionError,
   ResourceInactiveError,
@@ -8,6 +9,7 @@ import {
   SlotNotFoundError,
   TooManySlotsError,
 } from '../domain/domain-error';
+import { groupContiguous } from '../domain/contiguous-blocks';
 import {
   AVAILABILITY_PUBLISHER,
   CLOCK,
@@ -16,6 +18,7 @@ import {
   type Clock,
   type ConfirmedReservation,
   type ReservationRepository,
+  type SlotSnapshot,
 } from './ports';
 
 export interface CreateReservationInput {
@@ -24,6 +27,17 @@ export interface CreateReservationInput {
   readonly slotIds: readonly string[];
   readonly quantity?: number;
   readonly idempotencyKey?: string;
+}
+
+export interface RejectedBlockResult {
+  readonly slotIds: readonly string[];
+  readonly code: string;
+  readonly message: string;
+}
+
+export interface CreateReservationResult {
+  readonly created: readonly ConfirmedReservation[];
+  readonly rejected: readonly RejectedBlockResult[];
 }
 
 /**
@@ -37,6 +51,10 @@ export interface CreateReservationInput {
  * lendo o contador. Ler para depois escrever é exatamente a janela de corrida
  * que o ADR 0004 elimina. A decisão de "cabe ou não cabe" pertence ao banco,
  * dentro do mesmo statement que escreve.
+ *
+ * Uma seleção com lacunas vira VÁRIAS reservas, uma por bloco contíguo
+ * (ADR 0011). Cada bloco é atômico por si; blocos diferentes são
+ * independentes, e por isso o resultado pode ser parcial.
  */
 @Injectable()
 export class CreateReservationUseCase {
@@ -48,16 +66,8 @@ export class CreateReservationUseCase {
     private readonly publisher: AvailabilityPublisher,
   ) {}
 
-  async execute(input: CreateReservationInput): Promise<ConfirmedReservation> {
+  async execute(input: CreateReservationInput): Promise<CreateReservationResult> {
     const quantity = input.quantity ?? 1;
-
-    if (input.idempotencyKey) {
-      const existing = await this.repository.findByIdempotencyKey(
-        input.userId,
-        input.idempotencyKey,
-      );
-      if (existing) return existing;
-    }
 
     if (input.slotIds.length === 0) {
       throw new InvalidSelectionError('Selecione ao menos um horário.');
@@ -71,13 +81,6 @@ export class CreateReservationUseCase {
     const resource = await this.repository.findResource(input.resourceId);
     if (!resource) throw new ResourceNotFoundError(input.resourceId);
     if (!resource.active) throw new ResourceInactiveError(resource.id);
-
-    if (uniqueSlotIds.length > resource.maxSlotsPerReservation) {
-      throw new TooManySlotsError(
-        uniqueSlotIds.length,
-        resource.maxSlotsPerReservation,
-      );
-    }
 
     this.assertQuantity(quantity, resource);
 
@@ -96,33 +99,33 @@ export class CreateReservationUseCase {
       );
     }
 
-    const now = this.clock.now();
-    const past = slots.find((slot) => slot.startsAt.getTime() <= now.getTime());
-    if (past) throw new SlotInPastError(past.id);
-
-    // ORDENAÇÃO ANTI-DEADLOCK — não remover.
+    // Os blocos saem ordenados por início, e os slots dentro de cada bloco
+    // também. ESSA ORDENAÇÃO É ANTI-DEADLOCK — não remover.
     //
-    // Toda transação grava os slots na MESMA ordem global (startsAt
-    // ascendente). Sem isso, duas reservas de intervalos que se cruzam em
-    // sentidos opostos travam uma à outra e o Postgres aborta uma delas por
-    // deadlock. Com ordem consistente, o ciclo é impossível por construção.
-    // Ver ADR 0011 — há um teste dedicado que falha se este sort sumir.
-    const ordered = [...slots].sort(
-      (a, b) => a.startsAt.getTime() - b.startsAt.getTime(),
-    );
+    // Toda transação grava os slots na mesma ordem global. Sem isso, duas
+    // reservas de intervalos que se cruzam em sentidos opostos travam uma à
+    // outra e o Postgres aborta uma delas. Ver ADR 0011: há um teste dedicado
+    // que falha se a ordenação sumir.
+    const blocos = groupContiguous(slots);
 
-    const reservation = await this.repository.confirm({
-      resourceId: resource.id,
-      userId: input.userId,
-      quantity,
-      exclusive: resource.kind === 'EXCLUSIVE',
-      slots: ordered,
-      idempotencyKey: input.idempotencyKey,
-    });
+    const created: ConfirmedReservation[] = [];
+    const rejected: RejectedBlockResult[] = [];
 
-    // APÓS o commit (ADR 0005). `confirm` só resolve quando a transação
-    // fechou; publicar antes anunciaria disponibilidade sujeita a rollback.
-    this.publisher.publish(
+    for (const bloco of blocos) {
+      const resultado = await this.reserveBlock(
+        bloco,
+        resource,
+        quantity,
+        input,
+      );
+
+      if ('error' in resultado) rejected.push(resultado.error);
+      else created.push(resultado.reservation);
+    }
+
+    // APÓS o commit de cada bloco (ADR 0005). Um único lote de eventos, para
+    // que a tela dos outros usuários reconcilie uma vez só.
+    const deltas = created.flatMap((reservation) =>
       reservation.updatedSlots.map((slot) => ({
         type: 'slot-availability-changed' as const,
         slotId: slot.slotId,
@@ -131,8 +134,71 @@ export class CreateReservationUseCase {
         unitsPerSlot: slot.unitsPerSlot,
       })),
     );
+    if (deltas.length > 0) this.publisher.publish(deltas);
 
-    return reservation;
+    return { created, rejected };
+  }
+
+  private async reserveBlock(
+    bloco: readonly SlotSnapshot[],
+    resource: { id: string; kind: string; maxSlotsPerReservation: number },
+    quantity: number,
+    input: CreateReservationInput,
+  ): Promise<
+    { reservation: ConfirmedReservation } | { error: RejectedBlockResult }
+  > {
+    const slotIds = bloco.map((s) => s.id);
+
+    try {
+      // O limite de horários por reserva agora vale POR BLOCO: cada bloco é
+      // uma reserva, e é a reserva que tem teto.
+      if (bloco.length > resource.maxSlotsPerReservation) {
+        throw new TooManySlotsError(
+          bloco.length,
+          resource.maxSlotsPerReservation,
+        );
+      }
+
+      const now = this.clock.now();
+      const past = bloco.find(
+        (slot) => slot.startsAt.getTime() <= now.getTime(),
+      );
+      if (past) throw new SlotInPastError(past.id);
+
+      // Chave por bloco: um retry de rede precisa reencontrar a reserva
+      // daquele bloco especificamente, não a do primeiro.
+      const idempotencyKey = input.idempotencyKey
+        ? `${input.idempotencyKey}:${slotIds[0]}`
+        : undefined;
+
+      if (idempotencyKey) {
+        const existing = await this.repository.findByIdempotencyKey(
+          input.userId,
+          idempotencyKey,
+        );
+        if (existing) return { reservation: existing };
+      }
+
+      const reservation = await this.repository.confirm({
+        resourceId: resource.id,
+        userId: input.userId,
+        quantity,
+        exclusive: resource.kind === 'EXCLUSIVE',
+        slots: bloco,
+        idempotencyKey,
+      });
+
+      return { reservation };
+    } catch (error) {
+      // Falha de UM bloco não derruba os outros: eles são reservas
+      // independentes. Erro técnico continua subindo.
+      if (error instanceof DomainError) {
+        return {
+          error: { slotIds, code: error.code, message: error.message },
+        };
+      }
+      throw error;
+    }
   }
 
   private assertQuantity(
@@ -164,4 +230,3 @@ export class CreateReservationUseCase {
     }
   }
 }
-

@@ -79,7 +79,7 @@ describe('Condição de corrida na reserva', () => {
 
       // Todo perdedor recebe um código semântico, nunca 500.
       for (const r of conflitos) {
-        expect(r.body.code).toBe('SLOT_UNAVAILABLE');
+        expect(r.body.rejected[0].code).toBe('SLOT_UNAVAILABLE');
       }
 
       // Nenhuma resposta pode ser erro técnico.
@@ -126,7 +126,7 @@ describe('Condição de corrida na reserva', () => {
       expect(responses.filter((r) => r.status >= 500)).toHaveLength(0);
 
       const somaConfirmada = criados.reduce(
-        (total, r) => total + r.body.quantity,
+        (total, r) => total + r.body.created[0].quantity,
         0,
       );
 
@@ -172,10 +172,12 @@ describe('Condição de corrida na reserva', () => {
 
       // Atomicidade: cada reserva criada tem TODOS os seus slots gravados.
       for (const r of criados) {
-        const gravados = await prisma.reservationSlot.count({
-          where: { reservationId: r.body.id, status: 'CONFIRMED' },
-        });
-        expect(gravados).toBe(r.body.slotIds.length);
+        for (const reserva of r.body.created) {
+          const gravados = await prisma.reservationSlot.count({
+            where: { reservationId: reserva.id, status: 'CONFIRMED' },
+          });
+          expect(gravados).toBe(reserva.slotIds.length);
+        }
       }
 
       // E nenhum slot exclusivo ficou com mais de uma reserva confirmada.
@@ -210,7 +212,7 @@ describe('Condição de corrida na reserva', () => {
 
       const segunda = await reserve(user.id, fx.sharedResourceId, [alvo.id]);
       expect(segunda.status).toBe(409);
-      expect(segunda.body.code).toBe('ALREADY_RESERVED');
+      expect(segunda.body.rejected[0].code).toBe('ALREADY_RESERVED');
 
       // A contagem NÃO pode ter mudado: é exatamente essa a diferença entre
       // ALREADY_RESERVED e SLOT_UNAVAILABLE no ADR 0006.
@@ -238,13 +240,13 @@ describe('Condição de corrida na reserva', () => {
         alvo.id,
       ]);
       expect(repetida.status).toBe(409);
-      expect(repetida.body.code).toBe('ALREADY_RESERVED');
+      expect(repetida.body.rejected[0].code).toBe('ALREADY_RESERVED');
 
       const terceiro = await reserve(outro.id, fx.exclusiveResourceId, [
         alvo.id,
       ]);
       expect(terceiro.status).toBe(409);
-      expect(terceiro.body.code).toBe('SLOT_UNAVAILABLE');
+      expect(terceiro.body.rejected[0].code).toBe('SLOT_UNAVAILABLE');
     });
   });
 });

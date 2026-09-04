@@ -9,11 +9,13 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Res,
 } from '@nestjs/common';
 import type {
-  ReservationDto,
+  CreateReservationResponse,
   ReservationSummaryDto,
 } from '@resource-booking/contracts';
+import type { Response } from 'express';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -38,14 +40,23 @@ export class ReservationsController {
     return this.query.listMine(user.id);
   }
 
+  /**
+   * Cria uma reserva por bloco contíguo da seleção (ADR 0011).
+   *
+   * O resultado pode ser PARCIAL: cada bloco é atômico por si, mas blocos
+   * diferentes são reservas independentes. O status reflete isso —
+   * `201` tudo criado, `207` parte criada, `409` nada criado. O corpo tem o
+   * mesmo formato nos três casos, para que o cliente decida sempre pelo
+   * mesmo caminho (ADR 0006).
+   */
   @Post()
-  @HttpCode(HttpStatus.CREATED)
   async create(
     @Body() dto: CreateReservationDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) response: Response,
     @Headers('idempotency-key') idempotencyKey?: string,
-  ): Promise<ReservationDto> {
-    const reservation = await this.createReservation.execute({
+  ): Promise<CreateReservationResponse> {
+    const { created, rejected } = await this.createReservation.execute({
       resourceId: dto.resourceId,
       userId: user.id,
       slotIds: dto.slotIds,
@@ -53,14 +64,29 @@ export class ReservationsController {
       idempotencyKey: idempotencyKey || undefined,
     });
 
+    response.status(
+      created.length === 0
+        ? HttpStatus.CONFLICT
+        : rejected.length === 0
+          ? HttpStatus.CREATED
+          : HttpStatus.MULTI_STATUS,
+    );
+
     return {
-      id: reservation.id,
-      resourceId: reservation.resourceId,
-      userId: reservation.userId,
-      quantity: reservation.quantity,
-      status: 'CONFIRMED',
-      slotIds: [...reservation.slotIds],
-      createdAt: reservation.createdAt.toISOString(),
+      created: created.map((reservation) => ({
+        id: reservation.id,
+        resourceId: reservation.resourceId,
+        userId: reservation.userId,
+        quantity: reservation.quantity,
+        status: 'CONFIRMED' as const,
+        slotIds: [...reservation.slotIds],
+        createdAt: reservation.createdAt.toISOString(),
+      })),
+      rejected: rejected.map((block) => ({
+        slotIds: [...block.slotIds],
+        code: block.code,
+        message: block.message,
+      })),
     };
   }
 

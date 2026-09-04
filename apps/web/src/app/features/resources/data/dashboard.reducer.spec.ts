@@ -161,13 +161,15 @@ describe('dashboardReducer', () => {
   });
 
   describe('resultado da reserva', () => {
-    it('sucesso limpa a seleção e avisa', () => {
+    it('tudo criado limpa a seleção e avisa', () => {
       let state = pronto();
       state = dashboardReducer(state, { type: 'slot-toggled', slotId: 's1' });
       state = dashboardReducer(state, { type: 'submit-started' });
       state = dashboardReducer(state, {
-        type: 'submit-succeeded',
-        slotIds: ['s1'],
+        type: 'submit-settled',
+        createdBlocks: 1,
+        createdSlots: 1,
+        rejected: [],
       });
 
       expect(state.selection).toEqual([]);
@@ -175,29 +177,81 @@ describe('dashboardReducer', () => {
       expect(state.notice?.tone).toBe('success');
     });
 
-    it('SLOT_UNAVAILABLE é erro e preserva a seleção para reconciliar', () => {
+    it('menciona as reservas separadas quando a seleção tinha lacunas', () => {
+      let state = pronto();
+      state = dashboardReducer(state, { type: 'submit-started' });
+      state = dashboardReducer(state, {
+        type: 'submit-settled',
+        createdBlocks: 2,
+        createdSlots: 3,
+        rejected: [],
+      });
+
+      expect(state.notice?.tone).toBe('success');
+      expect(state.notice?.message).toContain('2 reservas');
+    });
+
+    it('resultado PARCIAL mantém na seleção só o que falhou', () => {
+      let state = pronto();
+      state = dashboardReducer(state, { type: 'slot-toggled', slotId: 's1' });
+      state = dashboardReducer(state, { type: 'slot-toggled', slotId: 's3' });
+      state = dashboardReducer(state, { type: 'submit-started' });
+      state = dashboardReducer(state, {
+        type: 'submit-settled',
+        createdBlocks: 1,
+        createdSlots: 1,
+        rejected: [
+          {
+            slotIds: ['s3'],
+            code: 'SLOT_UNAVAILABLE',
+            message: 'Este horário já foi reservado.',
+          },
+        ],
+      });
+
+      // O que passou sai da seleção; o que falhou permanece para o usuário
+      // decidir — remover tudo esconderia o que deu errado.
+      expect(state.selection).toEqual(['s3']);
+      expect(state.notice?.tone).toBe('warning');
+      expect(state.notice?.message).toContain('não estavam mais disponíveis');
+    });
+
+    it('nada criado preserva a seleção inteira e usa a mensagem do servidor', () => {
       let state = pronto();
       state = dashboardReducer(state, { type: 'slot-toggled', slotId: 's1' });
       state = dashboardReducer(state, { type: 'submit-started' });
       state = dashboardReducer(state, {
-        type: 'submit-failed',
-        code: 'SLOT_UNAVAILABLE',
-        message: 'Este horário já foi reservado.',
-        slotId: 's1',
+        type: 'submit-settled',
+        createdBlocks: 0,
+        createdSlots: 0,
+        rejected: [
+          {
+            slotIds: ['s1'],
+            code: 'SLOT_UNAVAILABLE',
+            message: 'Este horário já foi reservado.',
+          },
+        ],
       });
 
-      expect(state.submitting).toBe(false);
-      expect(state.notice?.tone).toBe('error');
       expect(state.selection).toEqual(['s1']);
+      expect(state.notice?.tone).toBe('error');
+      expect(state.notice?.code).toBe('SLOT_UNAVAILABLE');
     });
 
     it('ALREADY_RESERVED é informativo, não erro', () => {
       let state = pronto();
       state = dashboardReducer(state, { type: 'submit-started' });
       state = dashboardReducer(state, {
-        type: 'submit-failed',
-        code: 'ALREADY_RESERVED',
-        message: 'Você já tem uma reserva neste horário.',
+        type: 'submit-settled',
+        createdBlocks: 0,
+        createdSlots: 0,
+        rejected: [
+          {
+            slotIds: ['s1'],
+            code: 'ALREADY_RESERVED',
+            message: 'Você já tem uma reserva neste horário.',
+          },
+        ],
       });
 
       // A contagem do slot NÃO mudou — tratar como erro faria a tela sugerir

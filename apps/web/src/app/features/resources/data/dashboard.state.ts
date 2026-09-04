@@ -62,7 +62,12 @@ export type DashboardAction =
   | { type: 'selection-cleared' }
   | { type: 'quantity-changed'; quantity: number }
   | { type: 'submit-started' }
-  | { type: 'submit-succeeded'; slotIds: readonly string[] }
+  | {
+      type: 'submit-settled';
+      createdBlocks: number;
+      createdSlots: number;
+      rejected: readonly { slotIds: readonly string[]; code: string; message: string }[];
+    }
   | {
       type: 'submit-failed';
       code: ApiErrorCode | null;

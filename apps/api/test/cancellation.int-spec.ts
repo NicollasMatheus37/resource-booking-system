@@ -68,7 +68,7 @@ describe('Cancelamento', () => {
       }
     }
 
-    const cancelada = await cancel(fx.users[0].id, criada.body.id);
+    const cancelada = await cancel(fx.users[0].id, criada.body.created[0].id);
     expect(cancelada.status).toBe(200);
     expect(cancelada.body.changed).toBe(true);
 
@@ -93,7 +93,7 @@ describe('Cancelamento', () => {
     // 20 cancelamentos ao mesmo tempo. Sem o portão atômico, cada um
     // devolveria 3 unidades e o contador iria a -57.
     const responses = await Promise.all(
-      Array.from({ length: 20 }, () => cancel(fx.users[0].id, criada.body.id)),
+      Array.from({ length: 20 }, () => cancel(fx.users[0].id, criada.body.created[0].id)),
     );
 
     expect(responses.filter((r) => r.status >= 500)).toHaveLength(0);
@@ -121,7 +121,7 @@ describe('Cancelamento', () => {
     expect((await reserve(outro.id, fx.exclusiveResourceId, [alvo.id])).status)
       .toBe(409);
 
-    await cancel(dono.id, primeira.body.id);
+    await cancel(dono.id, primeira.body.created[0].id);
 
     // A constraint de exclusão e o índice único parcial são liberados ao
     // mudar o status em reservation_slots — sem isso, o slot ficaria
@@ -129,7 +129,7 @@ describe('Cancelamento', () => {
     const outroAgora = await reserve(outro.id, fx.exclusiveResourceId, [alvo.id]);
     expect(outroAgora.status).toBe(201);
 
-    await cancel(outro.id, outroAgora.body.id);
+    await cancel(outro.id, outroAgora.body.created[0].id);
 
     const donoDeNovo = await reserve(dono.id, fx.exclusiveResourceId, [alvo.id]);
     expect(donoDeNovo.status).toBe(201);
@@ -152,7 +152,7 @@ describe('Cancelamento', () => {
     // Metade cancela ENQUANTO os usuários restantes tentam entrar.
     const cancelamentos = confirmadas
       .slice(0, 5)
-      .map((r, i) => cancel(fx.users[i].id, r.body.id));
+      .map((r, i) => cancel(fx.users[i].id, r.body.created[0].id));
 
     const novas = fx.users
       .slice(UNIDADES, UNIDADES + 15)
@@ -181,7 +181,7 @@ describe('Cancelamento', () => {
       slots[0].id,
     ]);
 
-    const alheio = await cancel(fx.users[1].id, criada.body.id);
+    const alheio = await cancel(fx.users[1].id, criada.body.created[0].id);
     expect(alheio.status).toBe(404);
     expect(alheio.body.code).toBe('RESERVATION_NOT_FOUND');
 

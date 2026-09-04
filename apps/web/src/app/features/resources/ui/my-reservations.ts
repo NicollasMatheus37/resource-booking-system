@@ -59,6 +59,12 @@ export class MyReservations {
   readonly cancellingId = input<string | null>(null);
   readonly cancelled = output<string>();
 
+  /**
+   * Uma reserva é sempre um bloco CONTÍGUO (ADR 0011), então o rótulo é
+   * sempre um intervalo fechado. Uma seleção com lacunas gerou reservas
+   * separadas, e cada uma aparece no seu próprio card — que é o que "4
+   * horários" escondia antes.
+   */
   protected formatRange(reservation: ReservationSummaryDto): string {
     const slots = reservation.slots;
     if (slots.length === 0) return '';
@@ -67,26 +73,14 @@ export class MyReservations {
     const fim = new Date(slots[slots.length - 1].endsAt);
 
     const dia = inicio.toLocaleDateString('pt-BR', {
+      weekday: 'short',
       day: '2-digit',
       month: '2-digit',
     });
     const hora = (d: Date) =>
       d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-    const contiguo = slots.length === 1 || isContiguous(slots);
-
-    return contiguo
-      ? `${dia} · ${hora(inicio)}–${hora(fim)}`
-      : `${dia} · ${slots.length} horários`;
+    const duracao = slots.length === 1 ? '' : ` · ${slots.length} horários`;
+    return `${dia} · ${hora(inicio)}–${hora(fim)}${duracao}`;
   }
-}
-
-/** Seleção não precisa ser contígua (ADR 0011); o rótulo reflete isso. */
-function isContiguous(
-  slots: ReservationSummaryDto['slots'],
-): boolean {
-  for (let i = 1; i < slots.length; i += 1) {
-    if (slots[i].startsAt !== slots[i - 1].endsAt) return false;
-  }
-  return true;
 }

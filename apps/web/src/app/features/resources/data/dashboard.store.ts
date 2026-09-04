@@ -1,13 +1,18 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type {
+  CreateReservationResponse,
   CreateResourceRequest,
   ResourceDto,
   SlotDto,
 } from '@resource-booking/contracts';
 import { EMPTY, catchError, exhaustMap, of, switchMap, tap } from 'rxjs';
 import { Subject } from 'rxjs';
-import { blamedSlotId, toApiError } from '../../../core/http/api-error';
+import {
+  asReservationResult,
+  blamedSlotId,
+  toApiError,
+} from '../../../core/http/api-error';
 import { IdentityStore } from '../../../core/identity/identity.store';
 import { AvailabilityStream } from '../../../core/realtime/availability.stream';
 import { ResourcesApi } from './resources.api';
@@ -210,17 +215,16 @@ export class DashboardStore {
               quantity: resource.kind === 'SHARED' ? s.quantity : undefined,
             })
             .pipe(
-              tap((reservation) => {
-                this.dispatch({
-                  type: 'submit-succeeded',
-                  slotIds: reservation.slotIds,
-                });
-                // Reconcilia com o servidor: a resposta confirma o que é meu,
-                // e o refetch traz o efeito de reservas alheias concorrentes.
-                this.reloadSlots$.next();
-                this.reloadReservations$.next();
-              }),
+              tap((result) => this.settleSubmission(result)),
               catchError((error) => {
+                // `409` (nada criado) traz o MESMO contrato de resultado, só
+                // pelo canal de erro do Angular.
+                const asResult = asReservationResult(error);
+                if (asResult) {
+                  this.settleSubmission(asResult);
+                  return of(null);
+                }
+
                 const apiError = toApiError(error);
                 this.dispatch({
                   type: 'submit-failed',
@@ -241,6 +245,24 @@ export class DashboardStore {
         takeUntilDestroyed(),
       )
       .subscribe();
+  }
+
+  /** Aplica o resultado (total, parcial ou vazio) e reconcilia. */
+  private settleSubmission(result: CreateReservationResponse): void {
+    this.dispatch({
+      type: 'submit-settled',
+      createdBlocks: result.created.length,
+      createdSlots: result.created.reduce(
+        (total, r) => total + r.slotIds.length,
+        0,
+      ),
+      rejected: result.rejected,
+    });
+
+    // Reconcilia com o servidor: a resposta confirma o que é meu, e o refetch
+    // traz o efeito de reservas alheias concorrentes.
+    this.reloadSlots$.next();
+    this.reloadReservations$.next();
   }
 
   private wireRealtime(): void {

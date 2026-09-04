@@ -34,7 +34,10 @@ do banco rodam contra Postgres real.
 | 4 | Idempotência em `SHARED` | mesmo usuário, mesmo slot, duas vezes | `201` e depois `409 ALREADY_RESERVED`, com `reserved_units` **inalterado** |
 | 5 | Idempotência em `EXCLUSIVE` | dono repete; depois outro usuário tenta | dono recebe `ALREADY_RESERVED`, o outro recebe `SLOT_UNAVAILABLE` |
 
-Resultado: **5/5 passando**, ~9s de execução.
+| 6 | Blocos contíguos (`blocks.int-spec.ts`) | seleção com lacunas, bloco parcialmente tomado, resultado parcial | reservas independentes por bloco, `207` no parcial, `409` quando nada passa, atomicidade dentro do bloco |
+| 7 | Cancelamento (`cancellation.int-spec.ts`) | 20 cancelamentos simultâneos da mesma reserva | exatamente 1 com efeito, contador em zero |
+
+Resultado: **31/31 passando** nas seis suítes de integração.
 
 ### O que cada cenário prova
 
@@ -53,6 +56,18 @@ entre si e metade dos clientes envia os slots em ordem invertida. Sem o
 `sort` por `startsAt` no use-case, transações concorrentes travariam os mesmos
 slots em sentidos opostos e o Postgres abortaria uma delas com `40P01`, que
 viraria `500`. A asserção `erros5xx === []` falha se aquele `sort` for removido.
+
+**Cenário 6 — atomicidade no nível certo.** Uma reserva cobre um bloco
+contíguo (ADR 0011, revisão). Se o terceiro slot de um bloco de quatro já
+estiver tomado, o bloco **inteiro** falha — uma reunião de 2h com um buraco no
+meio não serve para nada. Já dois blocos separados são independentes: um pode
+passar e o outro não, e o teste verifica que o que passou está de fato gravado,
+sem rollback global.
+
+**Cenário 7 — o caminho inverso.** Cancelar sem cuidado fura a invariante em
+sentido contrário: contador negativo, ou unidade devolvida duas vezes. Vinte
+cancelamentos simultâneos da mesma reserva resultam em exatamente um com
+efeito, graças ao portão atômico (`WHERE status = 'CONFIRMED'`).
 
 **Cenários 4 e 5 — os dois `409` são distinguíveis.** É a diferença que o
 frontend precisa (ADR 0006): em `SLOT_UNAVAILABLE` a contagem mudou e a tela
