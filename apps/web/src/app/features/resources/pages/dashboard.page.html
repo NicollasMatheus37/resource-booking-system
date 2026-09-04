@@ -5,7 +5,7 @@
       <label class="text-sm opacity-70" for="user-select">Usuário</label>
       <select
         id="user-select"
-        class="select select-sm select-bordered"
+        class="select select-sm"
         [ngModel]="identity.currentId()"
         (ngModelChange)="onUserChange($event)"
       >
@@ -152,7 +152,7 @@
         <label class="flex items-center gap-2 text-sm">
           Unidades
           <select
-            class="select select-xs select-bordered"
+            class="select select-xs"
             [ngModel]="store.quantity()"
             (ngModelChange)="store.setQuantity(+$event)"
           >

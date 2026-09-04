@@ -25,116 +25,140 @@ import type {
  * unidades em 1, e na edição `kind` e `unitsPerSlot` ficam desabilitados
  * porque são imutáveis (mudar a capacidade com reservas de pé criaria
  * overbooking por edição de cadastro).
+ *
+ * O empilhamento de label e campo é feito com flex explícito. O DaisyUI 5
+ * removeu a classe `form-control`, que na v4 fazia isso — depender dela
+ * deixava os labels lado a lado com os inputs.
  */
 @Component({
   selector: 'app-resource-form',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule],
   template: `
-    <form class="flex flex-col gap-3" (submit)="onSubmit($event)">
-      <label class="form-control">
-        <span class="label-text text-sm">Nome</span>
+    <form class="flex flex-col gap-4" (submit)="onSubmit($event)">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium">Nome</span>
         <input
           #firstField
-          class="input input-bordered input-sm"
+          class="input input-sm w-full"
           [(ngModel)]="name"
           name="name"
           required
           minlength="2"
           maxlength="80"
+          autocomplete="off"
+          (blur)="touch()"
         />
       </label>
 
-      <label class="form-control">
-        <span class="label-text text-sm">Descrição</span>
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium">Descrição</span>
         <input
-          class="input input-bordered input-sm"
+          class="input input-sm w-full"
           [(ngModel)]="description"
           name="description"
           maxlength="300"
+          autocomplete="off"
         />
       </label>
 
-      <label class="form-control">
-        <span class="label-text text-sm">Tipo</span>
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium">Tipo</span>
         <select
-          class="select select-bordered select-sm"
+          class="select select-sm w-full"
           [ngModel]="kind()"
           (ngModelChange)="onKindChange($event)"
           name="kind"
           [disabled]="editing() !== null"
         >
-          <option value="EXCLUSIVE">Uso exclusivo (1 reserva por horário)</option>
-          <option value="SHARED">Compartilhado (N unidades por horário)</option>
+          <option value="EXCLUSIVE">
+            Uso exclusivo (1 reserva por horário)
+          </option>
+          <option value="SHARED">
+            Compartilhado (N unidades por horário)
+          </option>
         </select>
         @if (editing()) {
-          <span class="label-text-alt mt-1 opacity-60">
+          <span class="text-xs opacity-60">
             Tipo e capacidade são imutáveis após a criação.
           </span>
         }
       </label>
 
-      <div class="grid grid-cols-2 gap-3">
-        <label class="form-control">
-          <span class="label-text text-sm">Unidades por horário</span>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium">Unidades por horário</span>
           <input
             type="number"
-            class="input input-bordered input-sm"
+            class="input input-sm w-full"
             [(ngModel)]="unitsPerSlot"
             name="unitsPerSlot"
             min="1"
             [disabled]="kind() === 'EXCLUSIVE' || editing() !== null"
+            (blur)="touch()"
           />
         </label>
 
-        <label class="form-control">
-          <span class="label-text text-sm">Máx. por usuário</span>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium">Máx. por usuário</span>
           <input
             type="number"
-            class="input input-bordered input-sm"
+            class="input input-sm w-full"
             [(ngModel)]="maxUnitsPerUser"
             name="maxUnitsPerUser"
             min="1"
             [max]="unitsPerSlot()"
             [disabled]="kind() === 'EXCLUSIVE'"
+            (blur)="touch()"
           />
         </label>
 
-        <label class="form-control">
-          <span class="label-text text-sm">Máx. horários/reserva</span>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium">Máx. horários por reserva</span>
           <input
             type="number"
-            class="input input-bordered input-sm"
+            class="input input-sm w-full"
             [(ngModel)]="maxSlotsPerReservation"
             name="maxSlotsPerReservation"
             min="1"
+            (blur)="touch()"
           />
         </label>
 
-        <label class="form-control">
-          <span class="label-text text-sm">Lugares (informativo)</span>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium">Lugares</span>
           <input
             type="number"
-            class="input input-bordered input-sm"
+            class="input input-sm w-full"
             [(ngModel)]="seats"
             name="seats"
             min="1"
+            placeholder="informativo"
           />
         </label>
       </div>
 
-      @if (problem(); as message) {
+      <!--
+        A mensagem só aparece depois de o usuário interagir ou tentar enviar.
+        Acusar "informe um nome" num formulário recém-aberto é apontar erro em
+        algo que a pessoa ainda não teve chance de fazer.
+      -->
+      @if (touched() && problem(); as message) {
         <p class="text-error text-sm" role="alert">{{ message }}</p>
       }
 
       <div class="flex justify-end gap-2">
-        <button type="button" class="btn btn-ghost btn-sm" (click)="cancelled.emit()">
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm"
+          (click)="cancelled.emit()"
+        >
           Cancelar
         </button>
         <button
           type="submit"
           class="btn btn-primary btn-sm"
-          [disabled]="saving() || problem() !== null"
+          [disabled]="saving()"
           [attr.aria-busy]="saving()"
         >
           @if (saving()) {
@@ -147,13 +171,8 @@ import type {
   `,
 })
 export class ResourceForm implements AfterViewInit {
-  private readonly firstField =
+  private readonly firstFieldRef =
     viewChild<ElementRef<HTMLInputElement>>('firstField');
-
-  /** O modal não é aberto por `showModal()`, então o foco vai na mão. */
-  ngAfterViewInit(): void {
-    this.firstField()?.nativeElement.focus();
-  }
 
   readonly editing = input<ResourceDto | null>(null);
   readonly saving = input(false);
@@ -167,6 +186,9 @@ export class ResourceForm implements AfterViewInit {
   protected readonly maxUnitsPerUser = signal(1);
   protected readonly maxSlotsPerReservation = signal(4);
   protected readonly seats = signal<number | null>(null);
+
+  /** Só depois de interagir é que erros são exibidos. */
+  protected readonly touched = signal(false);
 
   /** Mesmas regras que o servidor aplica — aqui só para feedback imediato. */
   protected readonly problem = computed<string | null>(() => {
@@ -196,6 +218,15 @@ export class ResourceForm implements AfterViewInit {
     });
   }
 
+  /** O modal não é aberto por `showModal()`, então o foco vai na mão. */
+  ngAfterViewInit(): void {
+    this.firstFieldRef()?.nativeElement.focus();
+  }
+
+  protected touch(): void {
+    this.touched.set(true);
+  }
+
   protected onKindChange(kind: ResourceKind): void {
     this.kind.set(kind);
     // Uso exclusivo É o caso de uma unidade só — a UI não oferece uma
@@ -208,6 +239,9 @@ export class ResourceForm implements AfterViewInit {
 
   protected onSubmit(event: Event): void {
     event.preventDefault();
+
+    // Tentar enviar conta como interação: aqui a mensagem deve aparecer.
+    this.touched.set(true);
     if (this.problem()) return;
 
     this.submitted.emit({
