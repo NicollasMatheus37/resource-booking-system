@@ -76,7 +76,7 @@ pnpm exec nx test-integration api          # integração + concorrência (reque
 |---|---|---|
 | Unitários da API | 45 | Regras de domínio com repositórios falsos, agrupamento em blocos, geração de agenda com fuso |
 | Integração | 31 | Garantias do Postgres, contra banco real via Testcontainers |
-| Frontend | 38 | Reducer puro, store com HTTP e SSE falsos, guard, interceptor |
+| Frontend | 42 | Reducer puro, store com HTTP e SSE falsos, guard, interceptor, descarte de aviso |
 
 ---
 
@@ -217,6 +217,11 @@ requisição em voo), e o `Idempotency-Key` é a terceira, para retry de rede.
 bloqueado. Removê-lo silenciosamente faria o usuário reservar algo diferente do
 que estava vendo.
 
+*O resultado aparece como toast, e o descarte é assimétrico:* sucesso
+desaparece em 4,5s, aviso e erro ficam até o usuário fechar. "Reservado"
+confirma algo que a grade já mostra; "um horário não estava mais disponível" é
+informação que precisa ser lida antes de decidir o que fazer.
+
 ![Conflito ao vivo](docs/img/dashboard-conflito-ao-vivo.png)
 
 Uma seleção com lacunas resulta em reservas separadas, uma por bloco contíguo,
@@ -338,7 +343,7 @@ cadastro. Para mudar capacidade, cria-se outro recurso e desativa-se este.
 estado para markup; o custo/benefício no prazo não fechava. A cobertura vem do
 reducer, do store e da verificação em navegador real.
 
-**Acessibilidade** foi auditada com `axe-core` (WCAG 2.1 A/AA) em quatro estados
+**Acessibilidade** foi auditada com `axe-core` (WCAG 2.1 A/AA) em cinco estados
 da aplicação — zero violações — mas não houve teste com leitor de tela real.
 
 **Versões:** NestJS 11 e Prisma 7, não as majors mais recentes. O `@nx/nest`

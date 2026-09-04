@@ -69,7 +69,9 @@ export class TooManySlotsError extends DomainError {
   constructor(requested: number, max: number) {
     super(
       'TOO_MANY_SLOTS',
-      `Esta reserva permite no máximo ${max} horário(s); foram pedidos ${requested}.`,
+      max === 1
+        ? `Esta reserva permite no máximo 1 horário; foram pedidos ${requested}.`
+        : `Esta reserva permite no máximo ${max} horários seguidos; foram pedidos ${requested}.`,
       { requested, max },
     );
   }

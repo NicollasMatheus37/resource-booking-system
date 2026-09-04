@@ -79,6 +79,22 @@ describe('DashboardStore', () => {
     await pronto;
   }
 
+  /**
+   * Descarrega o que sobrou na fila.
+   *
+   * `TestBed.tick()` executa os `effect`s, e um deles reage à identidade
+   * disparando refetch de grade e reservas. Isso é comportamento correto do
+   * store; nos testes que precisam de `tick` para medir tempo, a fila é
+   * drenada no fim.
+   */
+  function drenar() {
+    // `switchMap` cancela o fetch anterior ao trocar de recurso, e requisição
+    // cancelada não aceita flush.
+    for (const req of http.match(() => true)) {
+      if (!req.cancelled) req.flush([]);
+    }
+  }
+
   const reserva = (id = 'res-1') => ({
     id,
     status: 'CONFIRMED' as const,
@@ -265,6 +281,80 @@ describe('DashboardStore', () => {
       expect(store.selection()).toEqual(['s1']);
       expect(store.notice()?.tone).toBe('error');
       http.expectNone(`${API}/resources/r1/slots`);
+    });
+  });
+
+  describe('descarte automático do aviso', () => {
+    it('sucesso desaparece sozinho', async () => {
+      jest.useFakeTimers();
+      try {
+        await carregar();
+        store.toggleSlot('s1');
+        store.submit();
+
+        http.expectOne(`${API}/reservations`).flush({
+          created: [
+            {
+              id: 'res-1',
+              resourceId: 'r1',
+              userId: 'user-1',
+              quantity: 1,
+              status: 'CONFIRMED',
+              slotIds: ['s1'],
+              createdAt: '2026-09-04T00:00:00.000Z',
+            },
+          ],
+          rejected: [],
+        });
+        http.expectOne(`${API}/resources/r1/slots`).flush([slot('s1')]);
+        http.expectOne(`${API}/reservations`).flush([]);
+
+        TestBed.tick();
+        expect(store.notice()?.tone).toBe('success');
+
+        jest.advanceTimersByTime(5000);
+        TestBed.tick();
+        expect(store.notice()).toBeNull();
+
+        drenar();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('aviso de falha PERMANECE — o usuário precisa ler antes de decidir', async () => {
+      jest.useFakeTimers();
+      try {
+        await carregar();
+        store.toggleSlot('s1');
+        store.submit();
+
+        http.expectOne(`${API}/reservations`).flush(
+          {
+            created: [],
+            rejected: [
+              {
+                slotIds: ['s1'],
+                code: 'SLOT_UNAVAILABLE',
+                message: 'Este horário já foi reservado.',
+              },
+            ],
+          },
+          { status: 409, statusText: 'Conflict' },
+        );
+        http.expectOne(`${API}/resources/r1/slots`).flush([slot('s1')]);
+        http.expectOne(`${API}/reservations`).flush([]);
+
+        TestBed.tick();
+        jest.advanceTimersByTime(60000);
+        TestBed.tick();
+
+        expect(store.notice()?.code).toBe('SLOT_UNAVAILABLE');
+
+        drenar();
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 

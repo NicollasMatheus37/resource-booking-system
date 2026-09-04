@@ -80,7 +80,10 @@ export function dashboardReducer(
           ...state,
           notice: {
             tone: 'warning',
-            message: `Esta reserva permite no máximo ${limite} horário(s).`,
+            message:
+              limite === 1
+                ? 'Esta reserva permite no máximo 1 horário.'
+                : `Esta reserva permite no máximo ${limite} horários seguidos.`,
           },
         };
       }
@@ -123,14 +126,12 @@ export function dashboardReducer(
         };
       }
 
-      const horarios =
-        createdSlots === 1 ? '1 horário' : `${createdSlots} horários`;
-      const reservas =
-        createdBlocks === 1 ? '1 reserva' : `${createdBlocks} reservas`;
       const base =
-        createdBlocks === 1
-          ? `${horarios} reservado(s).`
-          : `${horarios} reservados em ${reservas}.`;
+        createdSlots === 1
+          ? '1 horário reservado.'
+          : createdBlocks === 1
+            ? `${createdSlots} horários reservados.`
+            : `${createdSlots} horários reservados em ${createdBlocks} reservas.`;
 
       if (rejected.length === 0) {
         return {
@@ -143,6 +144,11 @@ export function dashboardReducer(
       }
 
       const perdidos = rejected.reduce((n, r) => n + r.slotIds.length, 0);
+      const restantes =
+        perdidos === 1
+          ? 'Outro horário não estava mais disponível.'
+          : `Outros ${perdidos} horários não estavam mais disponíveis.`;
+
       return {
         ...state,
         submitting: false,
@@ -151,10 +157,7 @@ export function dashboardReducer(
         selection: state.selection.filter((id) =>
           rejected.some((r) => r.slotIds.includes(id)),
         ),
-        notice: {
-          tone: 'warning',
-          message: `${base} Outro(s) ${perdidos} não estavam mais disponíveis.`,
-        },
+        notice: { tone: 'warning', message: `${base} ${restantes}` },
       };
     }
 

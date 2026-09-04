@@ -1,7 +1,7 @@
 # ADR 0006 — Gestão de estado no Angular
 
 - **Data:** 2026-09-03
-- **Status:** Aceito
+- **Status:** Aceito, complementado em 2026-09-04 (*Apresentação do resultado*)
 
 ## Contexto
 
@@ -37,10 +37,12 @@ signal, e o template nunca vê um Observable cru nem `async` pipe espalhado.
 {
   slots: Record<SlotId, SlotView>,   // normalizado por id
   status: 'idle' | 'loading' | 'ready' | 'error',
-  selection: Set<SlotId>,            // carrinho de slots marcados (ADR 0011)
+  selection: SlotId[],               // carrinho de slots marcados (ADR 0011)
   submitting: boolean,               // reserva em voo
-  connection: 'live' | 'reconnecting' | 'polling',
-  notice: Notice | null              // feedback de resultado
+  connection: 'connecting' | 'live' | 'offline',
+  notice: Notice | null,             // resultado, exibido como toast
+  myReservations: ReservationSummary[],
+  cancellingId: ReservationId | null
 }
 ```
 
@@ -74,8 +76,10 @@ mesmo recurso (invariante 7 do ADR 0003).
 O botão de confirmar **desabilita e entra em loading** no clique, e só volta
 quando a resposta chega. Não existe segundo clique: a prevenção é da UI, e o
 `Idempotency-Key` do ADR 0004 é apenas defesa em profundidade contra retry de
-rede. Toda a seleção vira **um único** `POST /reservations` com `slotIds[]`
-(ADR 0011) — nunca N requisições, que produziriam sucesso parcial.
+rede. Toda a seleção vira **um único** `POST /reservations` com `slotIds[]`:
+o servidor a quebra em blocos contíguos e cria uma reserva por bloco
+(ADR 0011). Nunca N requisições do cliente — o agrupamento é regra de negócio,
+e mantê-lo no servidor é o que torna a invariante de contiguidade verificável.
 
 A atualização é **pessimista** por decisão explícita: o slot só muda de estado
 depois do `201`. Update otimista foi recusado aqui porque, em recurso
@@ -108,14 +112,20 @@ novo no backend quebra o build do frontend se não for tratado.
 
 ### Tratamento de falha
 
-| Resposta | `code` | Reação da tela |
+| Resposta | `code` do bloco recusado | Reação da tela |
 |---|---|---|
-| `201` | — | slot vira "reservado por você", toast de sucesso |
-| `409` | `SLOT_UNAVAILABLE` | o erro nomeia **qual** slot falhou: essa célula vira "esgotado" e é marcada na seleção, com refetch para reconciliar. O resto da seleção é preservado |
-| `409` | `ALREADY_RESERVED` | toast informando a reserva existente do usuário; contagem **não** é alterada |
+| `201` | — | seleção limpa, toast de sucesso |
+| `207` | qualquer | os blocos criados saem da seleção; os recusados **permanecem** marcados, e o toast diz o que passou e o que não passou |
+| `409` | `SLOT_UNAVAILABLE` | seleção inteira preservada, toast de erro, refetch para reconciliar |
+| `409` | `ALREADY_RESERVED` | toast informativo; contagem **não** é alterada |
 | `422` | `SLOT_IN_PAST`, `RESOURCE_INACTIVE` | toast de regra de negócio, refetch da grade (o estado local está velho) |
 | `401` | — | limpa a identidade e volta ao seletor de usuário, preservando a rota de retorno (ADR 0008) |
 | `5xx` / rede | `INTERNAL` ou ausente | mantém estado anterior, toast com ação "tentar de novo"; nada é alterado localmente |
+
+O `207` e o `409` carregam o **mesmo corpo** (`{ created, rejected }`), então o
+store trata os três resultados pelo mesmo caminho — o Angular só entrega o
+`409` pelo canal de erro, e desembrulhar isso é responsabilidade de uma função
+na borda, não de cada feature.
 
 A distinção entre os dois `409` importa: em `SLOT_UNAVAILABLE` a contagem do
 slot mudou e precisa reconciliar; em `ALREADY_RESERVED` a contagem está certa e
@@ -123,6 +133,34 @@ mexer nela introduziria o erro que se queria evitar.
 
 Em todos os casos de falha o estado local **nunca** fica divergente do servidor:
 ou não se mexe, ou se reconcilia por refetch.
+
+### Apresentação do resultado — toast, não faixa
+
+Complemento de 2026-09-04, vindo da validação manual.
+
+O resultado era exibido como faixa no topo da coluna. Isso **empurrava a grade
+para baixo** a cada reserva, e num sistema em que a pessoa clica várias vezes
+seguidas é um layout pulando debaixo do cursor. Passou a ser um toast flutuante
+(`toast-top toast-end`), que não desloca nada.
+
+O descarte é **assimétrico por tom**, de propósito:
+
+| Tom | Comportamento |
+|---|---|
+| `success`, `info` | desaparece em 4,5s |
+| `warning`, `error` | permanece até o usuário fechar |
+
+"Reservado" confirma algo que a grade já mostra, e sumir é o comportamento
+certo. "Um horário não estava mais disponível" é informação que o usuário
+precisa **ler antes de decidir** o que fazer — esconder isso depois de alguns
+segundos seria esconder uma falha.
+
+O cronômetro vive num `effect` que depende do `computed` de aviso, não do
+estado inteiro: assim um delta de SSE não reinicia a contagem. O reducer
+permanece puro — ele decide o tom; quem mede tempo é o store.
+
+O toast mantém `role="status"` e `aria-live="polite"`: flutuar não pode
+significar invisível para quem usa leitor de tela.
 
 ### Fluxo de dados
 

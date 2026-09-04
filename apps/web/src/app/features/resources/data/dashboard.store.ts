@@ -99,6 +99,7 @@ export class DashboardStore {
     this.wireRealtime();
     this.wireCancellation();
     this.wireResourceEditing();
+    this.wireNoticeDismissal();
     this.wireIdentityChanges();
   }
 
@@ -438,6 +439,31 @@ export class DashboardStore {
 
         if (notice) this.dispatch({ type: 'notice-shown', notice });
       },
+    });
+  }
+
+  /**
+   * Sucesso e informação desaparecem sozinhos; aviso e erro ficam até o
+   * usuário fechar.
+   *
+   * A assimetria é deliberada: "reservado" é confirmação de algo que a grade
+   * já mostra, e sumir é o comportamento certo. "Um horário não estava mais
+   * disponível" é informação que o usuário precisa LER antes de decidir o que
+   * fazer — esconder isso depois de quatro segundos seria esconder uma falha.
+   */
+  private wireNoticeDismissal(): void {
+    effect((onCleanup) => {
+      // Depende do `computed`, não do estado inteiro: assim um delta de SSE
+      // não reinicia o cronômetro do toast.
+      const notice = this.notice();
+      if (!notice) return;
+      if (notice.tone === 'error' || notice.tone === 'warning') return;
+
+      const timer = setTimeout(
+        () => this.dispatch({ type: 'notice-dismissed' }),
+        4500,
+      );
+      onCleanup(() => clearTimeout(timer));
     });
   }
 

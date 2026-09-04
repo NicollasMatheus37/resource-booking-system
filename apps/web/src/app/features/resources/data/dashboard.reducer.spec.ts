@@ -177,6 +177,52 @@ describe('dashboardReducer', () => {
       expect(state.notice?.tone).toBe('success');
     });
 
+    it('concorda o número corretamente', () => {
+      const base = dashboardReducer(pronto(), { type: 'submit-started' });
+
+      const um = dashboardReducer(base, {
+        type: 'submit-settled',
+        createdBlocks: 1,
+        createdSlots: 1,
+        rejected: [],
+      });
+      expect(um.notice?.message).toBe('1 horário reservado.');
+
+      const varios = dashboardReducer(base, {
+        type: 'submit-settled',
+        createdBlocks: 1,
+        createdSlots: 2,
+        rejected: [],
+      });
+      expect(varios.notice?.message).toBe('2 horários reservados.');
+    });
+
+    it('concorda o número no resultado parcial', () => {
+      const base = dashboardReducer(pronto(), { type: 'submit-started' });
+
+      const umPerdido = dashboardReducer(base, {
+        type: 'submit-settled',
+        createdBlocks: 1,
+        createdSlots: 1,
+        rejected: [{ slotIds: ['s3'], code: 'SLOT_UNAVAILABLE', message: 'x' }],
+      });
+      expect(umPerdido.notice?.message).toContain(
+        'Outro horário não estava mais disponível.',
+      );
+
+      const doisPerdidos = dashboardReducer(base, {
+        type: 'submit-settled',
+        createdBlocks: 1,
+        createdSlots: 1,
+        rejected: [
+          { slotIds: ['s2', 's3'], code: 'SLOT_UNAVAILABLE', message: 'x' },
+        ],
+      });
+      expect(doisPerdidos.notice?.message).toContain(
+        'Outros 2 horários não estavam mais disponíveis.',
+      );
+    });
+
     it('menciona as reservas separadas quando a seleção tinha lacunas', () => {
       let state = pronto();
       state = dashboardReducer(state, { type: 'submit-started' });
@@ -188,7 +234,9 @@ describe('dashboardReducer', () => {
       });
 
       expect(state.notice?.tone).toBe('success');
-      expect(state.notice?.message).toContain('2 reservas');
+      expect(state.notice?.message).toBe(
+        '3 horários reservados em 2 reservas.',
+      );
     });
 
     it('resultado PARCIAL mantém na seleção só o que falhou', () => {
@@ -213,7 +261,9 @@ describe('dashboardReducer', () => {
       // decidir — remover tudo esconderia o que deu errado.
       expect(state.selection).toEqual(['s3']);
       expect(state.notice?.tone).toBe('warning');
-      expect(state.notice?.message).toContain('não estavam mais disponíveis');
+      expect(state.notice?.message).toBe(
+        '1 horário reservado. Outro horário não estava mais disponível.',
+      );
     });
 
     it('nada criado preserva a seleção inteira e usa a mensagem do servidor', () => {

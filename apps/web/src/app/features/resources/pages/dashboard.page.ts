@@ -11,6 +11,7 @@ import { IdentityStore } from '../../../core/identity/identity.store';
 import { DashboardStore } from '../data/dashboard.store';
 import { ConnectionBadge } from '../ui/connection-badge';
 import { MyReservations } from '../ui/my-reservations';
+import { NoticeToast } from '../ui/notice-toast';
 import { ResourceForm } from '../ui/resource-form';
 import { ResourceList } from '../ui/resource-list';
 import { SlotCell } from '../ui/slot-cell';
@@ -23,6 +24,7 @@ import { SlotCell } from '../ui/slot-cell';
     FormsModule,
     ConnectionBadge,
     MyReservations,
+    NoticeToast,
     ResourceForm,
     ResourceList,
     SlotCell,
@@ -52,6 +54,24 @@ export class DashboardPage implements OnInit {
     this.confirmingDeactivate.set(false);
     this.store.deactivateResource(resourceId);
   }
+
+  /** Concordância em português — "1 horário(s)" fica errado em qualquer caso. */
+  protected readonly selectionLabel = computed(() => {
+    const n = this.store.selection().length;
+    return n === 1 ? '1 horário selecionado' : `${n} horários selecionados`;
+  });
+
+  protected readonly invalidLabel = computed(() => {
+    const n = this.store.invalidSelection().length;
+    return n === 1
+      ? '1 horário da seleção já foi reservado — remova para continuar.'
+      : `${n} horários da seleção já foram reservados — remova para continuar.`;
+  });
+
+  protected readonly maxSlotsLabel = computed(() => {
+    const n = this.store.resource()?.maxSlotsPerReservation ?? 1;
+    return n === 1 ? 'até 1 horário por reserva' : `até ${n} horários por reserva`;
+  });
 
   protected readonly quantityOptions = computed(() => {
     const max = this.store.resource()?.maxUnitsPerUser ?? 1;
